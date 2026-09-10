@@ -429,6 +429,25 @@
         <button type="button" onclick="saveGasSettings()" class="px-4 py-1.5 text-xs bg-sky-600 text-white rounded-lg font-semibold">保存する</button>
       </div>
     </div>
+  <!-- クイック移動モーダル（タップでワンタッチ移動） -->
+  <div id="quick-move-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center hidden p-0 sm:p-4">
+    <div class="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">
+      <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+        <div>
+          <h3 id="quick-move-title" class="text-xs font-bold text-slate-800">クイック移動</h3>
+          <p id="quick-move-subtitle" class="text-[10px] text-slate-500">移動先を選択してください</p>
+        </div>
+        <button onclick="closeQuickMoveModal()" class="text-slate-400 hover:text-slate-600 p-1">
+          <i class="ph ph-x text-lg"></i>
+        </button>
+      </div>
+      <div id="quick-move-options" class="p-4 space-y-2 overflow-y-auto max-h-96">
+        <!-- 動的ボタン生成 -->
+      </div>
+      <div class="p-3 border-t border-slate-100 bg-slate-50 flex justify-end">
+        <button type="button" onclick="closeQuickMoveModal()" class="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-200 rounded-lg">キャンセル</button>
+      </div>
+    </div>
   </div>
 
   <!-- トースト通知 -->
@@ -481,9 +500,10 @@
 
     let staffList = [];
     let committees = [];
+    let floorLeaders = { '2F': '', '3F': '' };
     let gasUrl = '';
     let autoSaveTimer = null; // 自動保存用デバウンスタイマー
-    const DATA_ROSTER_VERSION = 'kusunoki_v2';
+    const DATA_ROSTER_VERSION = 'kusunoki_v3';
 
     // ================= 初期化 ＆ データ保存 =================
     function initApp() {
@@ -495,22 +515,45 @@
       const rosterVersion = localStorage.getItem('carehome_roster_version');
       const localStaff = localStorage.getItem('carehome_staff_data');
       const localCom = localStorage.getItem('carehome_com_data');
+      const localLeaders = localStorage.getItem('carehome_floor_leaders');
 
       if (rosterVersion !== DATA_ROSTER_VERSION || !localStaff) {
         staffList = JSON.parse(JSON.stringify(KUSUNOKI_STAFF_DATA));
         committees = JSON.parse(JSON.stringify(DEFAULT_COMMITTEES));
+        // 初期フロアリーダーのデフォルト設定 (2F: 佐々木大介., 3F: 小野早美)
+        floorLeaders = { '2F': 'st-2', '3F': 'st-7' };
+        staffList.forEach(s => {
+          if (s.id === floorLeaders['2F'] || s.id === floorLeaders['3F']) {
+            s.isFloorLeader = true;
+          }
+        });
         localStorage.setItem('carehome_staff_data', JSON.stringify(staffList));
         localStorage.setItem('carehome_com_data', JSON.stringify(committees));
+        localStorage.setItem('carehome_floor_leaders', JSON.stringify(floorLeaders));
         localStorage.setItem('carehome_roster_version', DATA_ROSTER_VERSION);
       } else {
         try {
           staffList = localStaff ? JSON.parse(localStaff) : JSON.parse(JSON.stringify(KUSUNOKI_STAFF_DATA));
           committees = localCom ? JSON.parse(localCom) : JSON.parse(JSON.stringify(DEFAULT_COMMITTEES));
+          floorLeaders = localLeaders ? JSON.parse(localLeaders) : { '2F': '', '3F': '' };
         } catch(e) {
           staffList = JSON.parse(JSON.stringify(KUSUNOKI_STAFF_DATA));
           committees = JSON.parse(JSON.stringify(DEFAULT_COMMITTEES));
+          floorLeaders = { '2F': '', '3F': '' };
         }
       }
+
+      // staffList内の isFloorLeader と floorLeaders の同期担保
+      ['2F', '3F'].forEach(f => {
+        if (floorLeaders[f]) {
+          const leader = staffList.find(s => s.id === floorLeaders[f]);
+          if (leader && leader.floor === f) {
+            leader.isFloorLeader = true;
+          } else {
+            floorLeaders[f] = '';
+          }
+        }
+      });
 
       // Google Apps Scriptの埋め込み実行(google.script.run)が使える環境かチェック
       if (typeof google !== 'undefined' && google.script && google.script.run) {
@@ -520,8 +563,10 @@
             if (res && res.staffList && res.staffList.length > 0) {
               staffList = res.staffList;
               committees = res.committees || committees;
+              floorLeaders = res.floorLeaders || floorLeaders;
               localStorage.setItem('carehome_staff_data', JSON.stringify(staffList));
               localStorage.setItem('carehome_com_data', JSON.stringify(committees));
+              localStorage.setItem('carehome_floor_leaders', JSON.stringify(floorLeaders));
               refreshAllUI();
               showToast('スプレッドシートから最新データを取得しました');
             }
@@ -538,6 +583,7 @@
     function saveLocalState() {
       localStorage.setItem('carehome_staff_data', JSON.stringify(staffList));
       localStorage.setItem('carehome_com_data', JSON.stringify(committees));
+      localStorage.setItem('carehome_floor_leaders', JSON.stringify(floorLeaders));
       updateCountsAndBadges();
 
       // 操作後、落ち着いたタイミングでクラウド/スプレッドシートへ自動保存
@@ -763,11 +809,141 @@
       };
     });
 
+    // ================= フロアリーダー＆並び順ロジック =================
+    function toggleFloorLeader(floor, staffId) {
+      if (floor !== '2F' && floor !== '3F') return;
+      const staff = staffList.find(s => s.id === staffId);
+      if (!staff) return;
+
+      const isCurrentLeader = floorLeaders[floor] === staffId;
+
+      if (isCurrentLeader) {
+        floorLeaders[floor] = '';
+        staff.isFloorLeader = false;
+        showToast(`${staff.name} さんのフロアリーダーを解除しました`);
+      } else {
+        // 同一フロアの既存リーダーを解除
+        staffList.forEach(s => {
+          if (s.floor === floor) s.isFloorLeader = false;
+        });
+        floorLeaders[floor] = staffId;
+        staff.isFloorLeader = true;
+
+        // 1番上（そのフロアの最上部）へ自動移動
+        moveStaffToFloorTop(staffId, floor);
+        showToast(`👑 ${staff.name} さんを${floor}リーダーに指名しました（1番上に配置）`);
+      }
+
+      saveLocalState();
+      renderFloorCards();
+    }
+
+    // 指定スタッフをそのフロアの最上部（先頭）に配置
+    function moveStaffToFloorTop(staffId, floor) {
+      const staff = staffList.find(s => s.id === staffId);
+      if (!staff) return;
+
+      const curIdx = staffList.findIndex(s => s.id === staffId);
+      if (curIdx > -1) staffList.splice(curIdx, 1);
+
+      const firstFloorIdx = staffList.findIndex(s => s.floor === floor);
+      if (firstFloorIdx > -1) {
+        staffList.splice(firstFloorIdx, 0, staff);
+      } else {
+        staffList.unshift(staff);
+      }
+    }
+
+    // 同一フロア内での上下並び替え（▲・▼ボタン）
+    function moveStaffOrder(staffId, direction) {
+      const staff = staffList.find(s => s.id === staffId);
+      if (!staff) return;
+
+      const sameFloorStaff = staffList.filter(s => s.floor === staff.floor);
+      const curPos = sameFloorStaff.findIndex(s => s.id === staffId);
+      const targetPos = direction === 'up' ? curPos - 1 : curPos + 1;
+
+      if (targetPos < 0 || targetPos >= sameFloorStaff.length) return;
+
+      const targetStaff = sameFloorStaff[targetPos];
+
+      // staffList 内での実際の位置を交換
+      const idxA = staffList.findIndex(s => s.id === staffId);
+      const idxB = staffList.findIndex(s => s.id === targetStaff.id);
+
+      const temp = staffList[idxA];
+      staffList[idxA] = staffList[idxB];
+      staffList[idxB] = temp;
+
+      saveLocalState();
+      renderFloorCards();
+      showToast(`${staff.name} を並び替えました`);
+    }
+
+    // 先頭または末尾への一発移動
+    function moveStaffToExtreme(staffId, position) {
+      const staff = staffList.find(s => s.id === staffId);
+      if (!staff) return;
+
+      const curIdx = staffList.findIndex(s => s.id === staffId);
+      if (curIdx > -1) staffList.splice(curIdx, 1);
+
+      if (position === 'top') {
+        const firstFloorIdx = staffList.findIndex(s => s.floor === staff.floor);
+        if (firstFloorIdx > -1) {
+          staffList.splice(firstFloorIdx, 0, staff);
+        } else {
+          staffList.unshift(staff);
+        }
+        showToast(`${staff.name} を1番上に移動しました`);
+      } else {
+        let lastFloorIdx = -1;
+        for (let i = staffList.length - 1; i >= 0; i--) {
+          if (staffList[i].floor === staff.floor) {
+            lastFloorIdx = i;
+            break;
+          }
+        }
+        if (lastFloorIdx > -1) {
+          staffList.splice(lastFloorIdx + 1, 0, staff);
+        } else {
+          staffList.push(staff);
+        }
+        showToast(`${staff.name} を1番下に移動しました`);
+      }
+
+      saveLocalState();
+      renderFloorCards();
+    }
+
     function moveStaffToFloor(staffId, targetFloor) {
       const staff = staffList.find(s => s.id === staffId);
       if (!staff || staff.floor === targetFloor) return;
 
+      const oldFloor = staff.floor;
+      if (floorLeaders[oldFloor] === staffId) {
+        floorLeaders[oldFloor] = '';
+      }
+      staff.isFloorLeader = false;
       staff.floor = targetFloor;
+
+      // 移動先フロアの末尾に挿入
+      const curIdx = staffList.findIndex(s => s.id === staffId);
+      if (curIdx > -1) staffList.splice(curIdx, 1);
+
+      let lastTargetIdx = -1;
+      for (let i = staffList.length - 1; i >= 0; i--) {
+        if (staffList[i].floor === targetFloor) {
+          lastTargetIdx = i;
+          break;
+        }
+      }
+      if (lastTargetIdx > -1) {
+        staffList.splice(lastTargetIdx + 1, 0, staff);
+      } else {
+        staffList.push(staff);
+      }
+
       saveLocalState();
       renderFloorCards();
       const floorName = targetFloor === 'unassigned' ? '未配属' : `${targetFloor}フロア`;
@@ -813,25 +989,41 @@
     function createMobileStaffCard(staff) {
       const card = document.createElement('div');
       card.id = `card-${staff.id}`;
-      card.className = "draggable-card bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs flex items-center justify-between active:scale-[0.99] transition";
+
+      const isLeader = (staff.floor === '2F' || staff.floor === '3F') && floorLeaders[staff.floor] === staff.id;
+
+      card.className = `draggable-card p-2.5 rounded-lg border shadow-2xs flex items-center justify-between active:scale-[0.99] transition ${
+        isLeader
+          ? 'bg-amber-50/90 border-amber-300 ring-2 ring-amber-200'
+          : 'bg-white border-slate-200 hover:border-slate-300'
+      }`;
 
       // 委員名タグ
       const staffComms = committees
         .filter(c => c.members.includes(staff.id))
         .map(c => c.name.replace(/委員会|対策委員会/g, ''));
-      
+
       const commBadge = staffComms.length > 0
         ? `<div class="text-[10px] text-slate-400 mt-0.5 flex flex-wrap gap-1">
              ${staffComms.map(name => `<span class="bg-slate-100 px-1 rounded text-slate-600">${name}</span>`).join('')}
            </div>`
         : '';
 
+      // フロアリーダー（王冠）ボタン（2F / 3F のみ）
+      const crownButton = (staff.floor === '2F' || staff.floor === '3F')
+        ? `<button type="button" onclick="event.stopPropagation(); toggleFloorLeader('${staff.floor}', '${staff.id}')" title="${isLeader ? 'フロアリーダーを解除' : 'フロアリーダーに指名（1番上に配置）'}" class="p-1 rounded-md transition ${isLeader ? 'text-amber-500 hover:bg-amber-100' : 'text-slate-300 hover:text-amber-500 hover:bg-slate-100'}">
+             <i class="ph-fill ph-crown text-base"></i>
+           </button>`
+        : '';
+
       card.innerHTML = `
-        <div class="flex items-center gap-2 flex-1 min-w-0 pr-2 pointer-events-none">
+        <div class="flex items-center gap-1.5 flex-1 min-w-0 pr-1 cursor-pointer" onclick="openFloorQuickMove('${staff.id}')">
           <i class="ph ph-dots-six-vertical text-slate-400 text-base shrink-0"></i>
+          ${crownButton}
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-1.5 flex-wrap">
-              <span class="font-bold text-xs text-slate-800">${staff.name}</span>
+              <span class="font-bold text-xs ${isLeader ? 'text-slate-900 font-extrabold' : 'text-slate-800'}">${staff.name}</span>
+              ${isLeader ? '<span class="text-[9px] px-1.5 py-0.2 bg-amber-500 text-white font-bold rounded shadow-2xs">👑リーダー</span>' : ''}
               <span class="text-[9px] px-1.5 py-0.2 rounded border font-medium ${getQualColor(staff.qualification)}">${staff.qualification}</span>
               <span class="text-[10px] text-slate-400">${staff.employment}</span>
             </div>
@@ -839,9 +1031,25 @@
             ${commBadge}
           </div>
         </div>
-        <!-- ワンタッチ移動ボタン（タップでポップアップから即移動可能） -->
+
+        <!-- 操作エリア: 並び替えボタン ＆ フロア切替ボタン -->
         <div class="flex items-center gap-1 shrink-0">
-          <button type="button" onclick="openFloorQuickMove('${staff.id}')" title="フロアを移動" class="px-2 py-1 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 rounded-md text-[11px] font-bold flex items-center gap-1 active:scale-95 transition">
+          <!-- 上下並び替えボタン -->
+          <div class="flex flex-col gap-0.5">
+            <button type="button" onclick="event.stopPropagation(); moveStaffOrder('${staff.id}', 'up')" title="上へ移動" class="w-5 h-4 flex items-center justify-center bg-slate-100 hover:bg-sky-100 text-slate-500 hover:text-sky-600 rounded text-[10px] active:scale-90 transition">
+              <i class="ph-bold ph-caret-up"></i>
+            </button>
+            <button type="button" onclick="event.stopPropagation(); moveStaffOrder('${staff.id}', 'down')" title="下へ移動" class="w-5 h-4 flex items-center justify-center bg-slate-100 hover:bg-sky-100 text-slate-500 hover:text-sky-600 rounded text-[10px] active:scale-90 transition">
+              <i class="ph-bold ph-caret-down"></i>
+            </button>
+          </div>
+
+          <!-- フロア移動ボタン（タップでポップアップから即移動可能） -->
+          <button type="button" onclick="event.stopPropagation(); openFloorQuickMove('${staff.id}')" title="配置切替" class="px-2 py-1.5 ${
+            isLeader
+              ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
+              : 'bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200'
+          } rounded-md text-[11px] font-bold flex items-center gap-1 active:scale-95 transition">
             <i class="ph ph-arrows-left-right"></i>
             <span>${staff.floor === 'unassigned' ? '未配' : staff.floor}</span>
           </button>
@@ -860,6 +1068,19 @@
       drop2F.innerHTML = '';
       drop3F.innerHTML = '';
       dropUn.innerHTML = '';
+
+      // フロアリーダーを常にそのフロアの最上部に保証
+      ['2F', '3F'].forEach(f => {
+        if (floorLeaders[f]) {
+          const leaderIdx = staffList.findIndex(s => s.id === floorLeaders[f]);
+          const firstFloorIdx = staffList.findIndex(s => s.floor === f);
+          if (leaderIdx > -1 && firstFloorIdx > -1 && leaderIdx !== firstFloorIdx) {
+            const leader = staffList.splice(leaderIdx, 1)[0];
+            const newFirstIdx = staffList.findIndex(s => s.floor === f);
+            staffList.splice(newFirstIdx > -1 ? newFirstIdx : 0, 0, leader);
+          }
+        }
+      });
 
       let count2 = 0, count3 = 0, countUn = 0;
 
@@ -1014,8 +1235,10 @@
       const staff = staffList.find(s => s.id === staffId);
       if (!staff) return;
 
-      document.getElementById('quick-move-title').innerText = `${staff.name} さんのフロア配置`;
-      document.getElementById('quick-move-subtitle').innerText = '移動先フロアをタップしてください';
+      const isLeader = (staff.floor === '2F' || staff.floor === '3F') && floorLeaders[staff.floor] === staff.id;
+
+      document.getElementById('quick-move-title').innerText = `${staff.name} さんの配置切替`;
+      document.getElementById('quick-move-subtitle').innerText = `現在: ${staff.floor === 'unassigned' ? '未配属' : staff.floor + 'フロア'}${isLeader ? ' (👑フロアリーダー)' : ''}`;
 
       const optionsContainer = document.getElementById('quick-move-options');
       const destinations = [
@@ -1024,10 +1247,12 @@
         { key: 'unassigned', name: '未配属 / フリー・ケアマネ', badge: 'bg-slate-200 text-slate-700' }
       ];
 
-      optionsContainer.innerHTML = destinations.map(dest => {
+      let html = '<div class="space-y-1.5">';
+      html += '<p class="text-[11px] font-bold text-slate-600 mb-1">■ フロア移動</p>';
+      html += destinations.map(dest => {
         const isCurrent = staff.floor === dest.key;
         return `
-          <button type="button" onclick="moveStaffToFloor('${staff.id}', '${dest.key}'); closeQuickMoveModal();" class="w-full flex items-center justify-between p-3 rounded-xl border ${
+          <button type="button" onclick="moveStaffToFloor('${staff.id}', '${dest.key}'); closeQuickMoveModal();" class="w-full flex items-center justify-between p-2.5 rounded-xl border ${
             isCurrent ? 'bg-sky-50 border-sky-300 ring-2 ring-sky-200 font-bold' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
           } transition active:scale-[0.98]">
             <div class="flex items-center gap-2">
@@ -1038,7 +1263,48 @@
           </button>
         `;
       }).join('');
+      html += '</div>';
 
+      // フロアリーダー設定（2Fまたは3Fに所属している場合）
+      if (staff.floor === '2F' || staff.floor === '3F') {
+        html += `
+          <div class="pt-2 border-t border-slate-100 mt-2 space-y-1.5">
+            <p class="text-[11px] font-bold text-slate-600 mb-1">■ フロアリーダー設定</p>
+            <button type="button" onclick="toggleFloorLeader('${staff.floor}', '${staff.id}'); closeQuickMoveModal();" class="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl border font-bold text-xs transition active:scale-[0.98] ${
+              isLeader ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100' : 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100'
+            }">
+              <i class="ph-fill ph-crown text-base ${isLeader ? 'text-rose-500' : 'text-amber-500'}"></i>
+              <span>${isLeader ? '👑 フロアリーダーを解除する' : `👑 ${staff.floor}リーダーに指名する（1番上に配置）`}</span>
+            </button>
+          </div>
+        `;
+      }
+
+      // 並び順の一発移動（1番上へ / 1番下へ）
+      html += `
+        <div class="pt-2 border-t border-slate-100 mt-2">
+          <p class="text-[11px] font-bold text-slate-600 mb-1.5">■ 並び順の一発移動</p>
+          <div class="grid grid-cols-2 gap-2">
+            <button type="button" onclick="moveStaffToExtreme('${staff.id}', 'top'); closeQuickMoveModal();" class="flex items-center justify-center gap-1 p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold active:scale-95 transition">
+              <i class="ph-bold ph-arrow-fat-line-up text-sky-600"></i> 1番上へ
+            </button>
+            <button type="button" onclick="moveStaffToExtreme('${staff.id}', 'bottom'); closeQuickMoveModal();" class="flex items-center justify-center gap-1 p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold active:scale-95 transition">
+              <i class="ph-bold ph-arrow-fat-line-down text-sky-600"></i> 1番下へ
+            </button>
+          </div>
+        </div>
+      `;
+
+      // スタッフ編集ショートカット
+      html += `
+        <div class="pt-2 border-t border-slate-100 mt-2">
+          <button type="button" onclick="closeQuickMoveModal(); openStaffModal('${staff.id}');" class="w-full flex items-center justify-center gap-1 p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 text-xs font-medium transition">
+            <i class="ph ph-pencil-simple"></i> 台帳のスタッフ情報を編集
+          </button>
+        </div>
+      `;
+
+      optionsContainer.innerHTML = html;
       document.getElementById('quick-move-modal').classList.remove('hidden');
     }
 
@@ -1207,14 +1473,14 @@
             setSyncStatus('保存失敗', 'rose');
             showToast('保存に失敗しました: ' + err);
           })
-          .saveAllData({ staffList, committees });
+          .saveAllData({ staffList, committees, floorLeaders });
         return;
       }
 
       // 3. Web App URL (fetch POST) がある場合
       if (gasUrl) {
         try {
-          const payload = JSON.stringify({ staffList, committees });
+          const payload = JSON.stringify({ staffList, committees, floorLeaders });
           await fetch(gasUrl, {
             method: 'POST',
             mode: 'no-cors',
@@ -1257,6 +1523,7 @@
             if (res && res.staffList) {
               staffList = res.staffList;
               committees = res.committees || [];
+              if (res.floorLeaders) floorLeaders = res.floorLeaders;
               saveLocalState();
               refreshAllUI();
               closeSettingsModal();
@@ -1278,6 +1545,7 @@
         if (data && data.staffList) {
           staffList = data.staffList;
           committees = data.committees || [];
+          if (data.floorLeaders) floorLeaders = data.floorLeaders;
           saveLocalState();
           refreshAllUI();
           closeSettingsModal();
