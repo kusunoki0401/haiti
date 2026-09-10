@@ -163,7 +163,7 @@
       <div class="bg-sky-50/70 border border-sky-200/70 rounded-lg px-2.5 py-1.5 flex items-center justify-between text-[11px] text-sky-800">
         <div class="flex items-center gap-1.5">
           <i class="ph ph-hand-tap text-sm text-sky-600"></i>
-          <span><b>名前タップで即フロア選択</b>・左端の「<b>⋮⋮</b>」掴みでドラッグ移動</span>
+          <span>右端の<b>[フロア▼]</b>から即切替・名前タップで詳細移動・左端<b>⋮⋮</b>でドラッグ移動</span>
         </div>
       </div>
 
@@ -1369,16 +1369,19 @@
             </button>
           </div>
 
-          <!-- フロア移動ボタン（他のフロアを選択して移動） -->
-          <button type="button" onclick="event.stopPropagation(); openFloorQuickMove('${staff.id}')" title="他のフロアを選択して移動" class="quick-move-btn px-2.5 py-1.5 ${
-            isLeader
-              ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
-              : 'bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200'
-          } rounded-md text-[11px] font-bold flex items-center gap-1 active:scale-95 transition">
-            <i class="ph ph-arrows-left-right text-xs"></i>
-            <span>${staff.floor === 'unassigned' ? '未配' : staff.floor}</span>
-            <i class="ph-bold ph-caret-down text-[9px] opacity-70"></i>
-          </button>
+          <!-- フロア直接選択プルダウン（OS標準セレクトで100%確実に即時移動可能） -->
+          <div class="relative flex items-center">
+            <select onchange="event.stopPropagation(); executeFloorSelectChange('${staff.id}', this.value)" onclick="event.stopPropagation()" class="appearance-none pl-2 pr-5 py-1.5 ${
+              isLeader
+                ? 'bg-amber-100 text-amber-900 border-amber-300 font-bold'
+                : 'bg-sky-50 text-sky-700 border-sky-200 font-bold'
+            } border rounded-lg text-xs cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-sky-500 shadow-2xs active:scale-95 transition">
+              <option value="2F" ${staff.floor === '2F' ? 'selected' : ''}>2F</option>
+              <option value="3F" ${staff.floor === '3F' ? 'selected' : ''}>3F</option>
+              <option value="unassigned" ${staff.floor === 'unassigned' ? 'selected' : ''}>未配</option>
+            </select>
+            <i class="ph-bold ph-caret-down text-[10px] text-slate-500 pointer-events-none absolute right-1.5"></i>
+          </div>
         </div>
       `;
 
@@ -1653,6 +1656,12 @@
       const reason = reasonInput ? reasonInput.value.trim() : '';
       closeQuickMoveModal();
       moveStaffToFloor(staffId, targetFloor, reason);
+    }
+
+    // カード右端のプルダウンから即座にフロアを移動
+    function executeFloorSelectChange(staffId, targetFloor) {
+      if (!staffId || !targetFloor) return;
+      moveStaffToFloor(staffId, targetFloor, '');
     }
 
     function openCommitteeQuickMove(staffId, currentCommitteeId) {
