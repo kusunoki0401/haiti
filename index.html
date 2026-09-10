@@ -34,15 +34,34 @@
       overscroll-behavior-y: contain;
     }
 
+    /* ドラッグ実行中のボディロック */
+    body.is-dragging-touch {
+      overflow: hidden !important;
+      touch-action: none !important;
+      user-select: none !important;
+      -webkit-user-select: none !important;
+    }
+
+    /* ドラッグハンドル */
+    .drag-handle {
+      touch-action: none !important;
+      cursor: grab;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .drag-handle:active {
+      cursor: grabbing;
+    }
+
     /* ドラッグ用クローンカード */
     .touch-drag-ghost {
       position: fixed;
       pointer-events: none;
       z-index: 9999;
-      opacity: 0.9;
-      transform: translate(-50%, -50%) scale(1.04);
-      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.2);
+      opacity: 0.92;
+      transform: translate(-50%, -50%) scale(1.03);
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.25);
       border: 2px solid #0284c7 !important;
+      background-color: #ffffff !important;
     }
 
     /* ドロップゾーンハイライト */
@@ -144,7 +163,7 @@
       <div class="bg-sky-50/70 border border-sky-200/70 rounded-lg px-2.5 py-1.5 flex items-center justify-between text-[11px] text-sky-800">
         <div class="flex items-center gap-1.5">
           <i class="ph ph-hand-tap text-sm text-sky-600"></i>
-          <span>カードを<b>長押しして指でドラッグ</b>でフロアへドロップ移動</span>
+          <span><b>名前タップで即フロア選択</b>・左端の「<b>⋮⋮</b>」掴みでドラッグ移動</span>
         </div>
       </div>
 
@@ -492,7 +511,7 @@
       </div>
     </div>
   <!-- クイック移動モーダル（タップでワンタッチ移動） -->
-  <div id="quick-move-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center hidden p-0 sm:p-4">
+  <div id="quick-move-modal" onclick="if(event.target === this) closeQuickMoveModal()" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center hidden p-0 sm:p-4">
     <div class="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">
       <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
         <div>
@@ -836,11 +855,12 @@
     let touchStartX = 0;
     let touchStartY = 0;
     let isDragging = false;
+    let longPressTimer = null;
 
     function setupTouchDnD() {
-      // 全体でtouchmove / touchendを監視
+      // 全体でtouchmove / touchendを監視 (passive: false でドラッグ中のスクロールを完全に抑止)
       document.addEventListener('touchmove', handleTouchMove, { passive: false });
-      document.addEventListener('touchend', handleTouchEnd);
+      document.addEventListener('touchend', handleTouchEnd, { passive: false });
       document.addEventListener('touchcancel', handleTouchCancel);
       setupDesktopCommitteeDropzones();
     }
@@ -854,9 +874,14 @@
     function attachCardTouchEvents(cardEl, staffId, sourceCommitteeId = null) {
       cardEl.classList.add('draggable-card');
 
-      // デスクトップ用 HTML5 DnD
+      // デスクトップ用 HTML5 DnD (ハンドルのみ、またはカード全体)
       cardEl.setAttribute('draggable', 'true');
       cardEl.ondragstart = (e) => {
+        // ボタンや操作要素上のクリックドラッグは無効化
+        if (e.target.closest('button, select, input, a, .quick-move-btn, .no-drag')) {
+          e.preventDefault();
+          return false;
+        }
         e.dataTransfer.setData('text/plain', staffId);
         if (sourceCommitteeId) {
           e.dataTransfer.setData('sourceCommitteeId', sourceCommitteeId);
@@ -869,11 +894,13 @@
         cardEl.classList.remove('opacity-40');
       };
 
-      // スマホ用 タッチイベント
+      // スマホ用 タッチイベント（ハンドル即時ドラッグ ＆ 250ms長押し判定）
       cardEl.addEventListener('touchstart', (e) => {
         if (e.touches.length !== 1) return;
-        // ボタンやセレクトを直接タップした時はドラッグを開始しない
-        if (e.target.closest('button, select, input, a')) return;
+        // ボタン、入力欄、リンク、配置切替ボタンを直接タップした時は絶対にドラッグ開始しない
+        if (e.target.closest('button, select, input, a, .quick-move-btn, .no-drag')) {
+          return;
+        }
 
         const touch = e.touches[0];
         touchStartX = touch.clientX;
@@ -884,7 +911,45 @@
           sourceCommitteeId: sourceCommitteeId
         };
         isDragging = false;
+
+        // ドラッグハンドル（⋮⋮）を直接触った場合は即座にドラッグ準備（待機時間なし）
+        const isDirectHandle = Boolean(e.target.closest('.drag-handle'));
+
+        if (isDirectHandle) {
+          startDragAction(touch.clientX, touch.clientY);
+        } else {
+          // カード本体をタップした場合は250ms長押しでドラッグ開始
+          // （通常のスクロールやタップでのフロア選択を邪魔しない）
+          if (longPressTimer) clearTimeout(longPressTimer);
+          longPressTimer = setTimeout(() => {
+            if (activeTouchCard && !isDragging) {
+              startDragAction(touch.clientX, touch.clientY);
+            }
+          }, 250);
+        }
       }, { passive: true });
+    }
+
+    function startDragAction(x, y) {
+      if (!activeTouchCard) return;
+      isDragging = true;
+      document.body.classList.add('drag-in-progress', 'is-dragging-touch');
+
+      // ゴースト要素を作成
+      touchGhostEl = activeTouchCard.el.cloneNode(true);
+      touchGhostEl.classList.add('touch-drag-ghost');
+      touchGhostEl.style.width = Math.min(activeTouchCard.el.offsetWidth, 320) + 'px';
+      touchGhostEl.style.left = x + 'px';
+      touchGhostEl.style.top = y + 'px';
+      document.body.appendChild(touchGhostEl);
+
+      activeTouchCard.el.classList.add('opacity-30');
+      highlightDropZoneUnderTouch(x, y);
+
+      // スマホのバイブレーションが使える場合は微振動でドラッグ開始を通知
+      if (navigator.vibrate) {
+        try { navigator.vibrate(40); } catch(e) {}
+      }
     }
 
     function handleTouchMove(e) {
@@ -894,21 +959,21 @@
       const deltaX = Math.abs(touch.clientX - touchStartX);
       const deltaY = Math.abs(touch.clientY - touchStartY);
 
-      // 移動距離が閾値（8px）を超えたらドラッグ開始
-      if (!isDragging && (deltaX > 8 || deltaY > 8)) {
-        isDragging = true;
-        document.body.classList.add('drag-in-progress');
-
-        // ゴースト要素を作成
-        touchGhostEl = activeTouchCard.el.cloneNode(true);
-        touchGhostEl.classList.add('touch-drag-ghost');
-        touchGhostEl.style.width = Math.min(activeTouchCard.el.offsetWidth, 300) + 'px';
-        document.body.appendChild(touchGhostEl);
-        activeTouchCard.el.classList.add('opacity-30');
+      // ドラッグがまだ開始されていない状態で指が動いた場合
+      if (!isDragging) {
+        // 通常のスクロール操作（指が12px以上動いた）と判断し、長押しタイマーを解除してスクロールを優先
+        if (deltaX > 12 || deltaY > 12) {
+          if (longPressTimer) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+          }
+          activeTouchCard = null;
+          return;
+        }
       }
 
+      // ドラッグ実行中ならスクロールを確実に停止し、ゴーストを追従
       if (isDragging) {
-        // スクロールを防止
         e.preventDefault();
 
         if (touchGhostEl) {
@@ -921,9 +986,15 @@
     }
 
     function handleTouchEnd(e) {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+
       if (!activeTouchCard) return;
 
       if (isDragging) {
+        e.preventDefault();
         const touch = e.changedTouches[0];
         const targetDropzone = findDropZoneAtPoint(touch.clientX, touch.clientY);
 
@@ -948,11 +1019,19 @@
     }
 
     function handleTouchCancel() {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
       cleanupDragState();
     }
 
     function cleanupDragState() {
-      document.body.classList.remove('drag-in-progress');
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+      document.body.classList.remove('drag-in-progress', 'is-dragging-touch');
       if (touchGhostEl) {
         touchGhostEl.remove();
         touchGhostEl = null;
@@ -1258,23 +1337,28 @@
         : '';
 
       card.innerHTML = `
-        <div class="flex items-center gap-1.5 flex-1 min-w-0 pr-1 cursor-pointer" onclick="openFloorQuickMove('${staff.id}')">
-          <i class="ph ph-dots-six-vertical text-slate-400 text-base shrink-0"></i>
-          ${crownButton}
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-1.5 flex-wrap">
-              <span class="font-bold text-xs ${isLeader ? 'text-slate-900 font-extrabold' : 'text-slate-800'}">${staff.name}</span>
-              ${isLeader ? '<span class="text-[9px] px-1.5 py-0.2 bg-amber-500 text-white font-bold rounded shadow-2xs">👑リーダー</span>' : ''}
-              <span class="text-[9px] px-1.5 py-0.2 rounded border font-medium ${getQualColor(staff.qualification)}">${staff.qualification}</span>
-              <span class="text-[10px] text-slate-400">${staff.employment}</span>
-            </div>
-            <div class="text-[10px] text-slate-500 mt-0.5">${staff.role || '介護職'} ${staff.notes ? '• ' + staff.notes : ''}</div>
-            ${commBadge}
-          </div>
+        <!-- 左端: ドラッグ専用ハンドル（掴むと即座にドラッグ） -->
+        <div class="drag-handle p-1.5 -ml-1 mr-0.5 text-slate-400 hover:text-sky-600 active:text-sky-700 select-none shrink-0" title="ドラッグして移動">
+          <i class="ph ph-dots-six-vertical text-lg"></i>
         </div>
 
-        <!-- 操作エリア: 並び替えボタン ＆ フロア切替ボタン -->
-        <div class="flex items-center gap-1 shrink-0">
+        <!-- 王冠ボタン（リーダー指名・解除） -->
+        ${crownButton}
+
+        <!-- カード中央: スタッフ名・詳細（タップでフロア選択ポップアップ） -->
+        <div class="flex-1 min-w-0 px-1 py-1 cursor-pointer select-none" onclick="openFloorQuickMove('${staff.id}')" title="タップしてフロアを移動">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="font-bold text-xs ${isLeader ? 'text-slate-900 font-extrabold' : 'text-slate-800'}">${staff.name}</span>
+            ${isLeader ? '<span class="text-[9px] px-1.5 py-0.2 bg-amber-500 text-white font-bold rounded shadow-2xs">👑リーダー</span>' : ''}
+            <span class="text-[9px] px-1.5 py-0.2 rounded border font-medium ${getQualColor(staff.qualification)}">${staff.qualification}</span>
+            <span class="text-[10px] text-slate-400">${staff.employment}</span>
+          </div>
+          <div class="text-[10px] text-slate-500 mt-0.5">${staff.role || '介護職'} ${staff.notes ? '• ' + staff.notes : ''}</div>
+          ${commBadge}
+        </div>
+
+        <!-- 右端: 操作エリア（並び替えボタン ＆ フロア切替ボタン） -->
+        <div class="flex items-center gap-1 shrink-0 ml-1 no-drag">
           <!-- 上下並び替えボタン -->
           <div class="flex flex-col gap-0.5">
             <button type="button" onclick="event.stopPropagation(); moveStaffOrder('${staff.id}', 'up')" title="上へ移動" class="w-5 h-4 flex items-center justify-center bg-slate-100 hover:bg-sky-100 text-slate-500 hover:text-sky-600 rounded text-[10px] active:scale-90 transition">
@@ -1286,7 +1370,7 @@
           </div>
 
           <!-- フロア移動ボタン（他のフロアを選択して移動） -->
-          <button type="button" onclick="event.stopPropagation(); openFloorQuickMove('${staff.id}')" title="他のフロアを選択して移動" class="px-2 py-1.5 ${
+          <button type="button" onclick="event.stopPropagation(); openFloorQuickMove('${staff.id}')" title="他のフロアを選択して移動" class="quick-move-btn px-2.5 py-1.5 ${
             isLeader
               ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
               : 'bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200'
@@ -1412,21 +1496,21 @@
             }`;
 
             memberRow.innerHTML = `
-              <div class="flex items-center gap-2 min-w-0 flex-1">
-                <i class="ph ph-dots-six-vertical text-slate-400 text-base shrink-0"></i>
-                <button type="button" onclick="toggleCommitteeLeader('${c.id}', '${m.id}')" title="${isLeader ? '委員長を解除' : '委員長に指名'}" class="p-1 rounded-md transition ${isLeader ? 'text-amber-600 hover:bg-amber-100' : 'text-slate-300 hover:text-amber-500 hover:bg-slate-200'}">
-                  <i class="ph-fill ph-crown text-base"></i>
-                </button>
-                <div class="truncate flex-1">
-                  <div class="flex items-center gap-1.5 flex-wrap">
-                    <span class="font-bold text-xs text-slate-900 tracking-wide">${m.name}</span>
-                    ${isLeader ? '<span class="text-[9px] px-1.5 py-0.2 bg-amber-500 text-white font-bold rounded shadow-2xs">委員長</span>' : ''}
-                    <span class="text-[10px] px-1 py-0.2 rounded font-medium ${m.floor === '2F' ? 'bg-emerald-100 text-emerald-800' : m.floor === '3F' ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-200 text-slate-700'}">${m.floor === 'unassigned' ? '未配属' : m.floor}</span>
-                  </div>
-                  <div class="text-[10px] text-slate-500 mt-0.5">${m.qualification} • ${m.role || '介護職'}</div>
-                </div>
+              <div class="drag-handle p-1 -ml-1 text-slate-400 hover:text-sky-600 active:text-sky-700 select-none shrink-0" title="ドラッグして他委員会へ移動">
+                <i class="ph ph-dots-six-vertical text-base"></i>
               </div>
-              <div class="flex items-center gap-1 shrink-0 ml-1">
+              <button type="button" onclick="toggleCommitteeLeader('${c.id}', '${m.id}')" title="${isLeader ? '委員長を解除' : '委員長に指名'}" class="p-1 rounded-md transition no-drag ${isLeader ? 'text-amber-600 hover:bg-amber-100' : 'text-slate-300 hover:text-amber-500 hover:bg-slate-200'}">
+                <i class="ph-fill ph-crown text-base"></i>
+              </button>
+              <div class="truncate flex-1 px-1 cursor-pointer select-none" onclick="openCommitteeQuickMove('${m.id}', '${c.id}')" title="タップして他委員会へ移動">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="font-bold text-xs text-slate-900 tracking-wide">${m.name}</span>
+                  ${isLeader ? '<span class="text-[9px] px-1.5 py-0.2 bg-amber-500 text-white font-bold rounded shadow-2xs">委員長</span>' : ''}
+                  <span class="text-[10px] px-1 py-0.2 rounded font-medium ${m.floor === '2F' ? 'bg-emerald-100 text-emerald-800' : m.floor === '3F' ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-200 text-slate-700'}">${m.floor === 'unassigned' ? '未配属' : m.floor}</span>
+                </div>
+                <div class="text-[10px] text-slate-500 mt-0.5">${m.qualification} • ${m.role || '介護職'}</div>
+              </div>
+              <div class="flex items-center gap-1 shrink-0 ml-1 no-drag">
                 <!-- クイック移動ボタン -->
                 <button type="button" onclick="openCommitteeQuickMove('${m.id}', '${c.id}')" title="他の委員会へ移動" class="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-md transition">
                   <i class="ph ph-arrows-left-right text-sm"></i>
@@ -1457,9 +1541,11 @@
       staffList.forEach(s => {
         const item = document.createElement('div');
         item.id = `pool-staff-${s.id}`;
-        item.className = "draggable-card shrink-0 px-2.5 py-1.5 bg-slate-50 hover:bg-sky-50 border border-slate-200 rounded-lg shadow-2xs flex items-center gap-1.5 active:scale-95 transition select-none";
+        item.className = "draggable-card shrink-0 px-2.5 py-1.5 bg-slate-50 hover:bg-sky-50 border border-slate-200 rounded-lg shadow-2xs flex items-center gap-1.5 active:scale-95 transition select-none cursor-pointer";
         item.innerHTML = `
-          <i class="ph ph-dots-six-vertical text-slate-400"></i>
+          <div class="drag-handle text-slate-400 hover:text-sky-600">
+            <i class="ph ph-dots-six-vertical"></i>
+          </div>
           <div>
             <div class="flex items-center gap-1">
               <span class="font-bold text-xs text-slate-800">${s.name}</span>
