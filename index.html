@@ -1,0 +1,1608 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>介護付き有料老人ホーム くすの木 人員配置マネージャー</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Phosphor Icons -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              100: '#e0f2fe',
+              500: '#0284c7',
+              600: '#0369a1',
+              700: '#075985',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap');
+    body {
+      font-family: 'Noto Sans JP', 'Inter', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: pan-y;
+      overscroll-behavior-y: contain;
+    }
+
+    /* ドラッグ用クローンカード */
+    .touch-drag-ghost {
+      position: fixed;
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.9;
+      transform: translate(-50%, -50%) scale(1.04);
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.2);
+      border: 2px solid #0284c7 !important;
+    }
+
+    /* ドロップゾーンハイライト */
+    .drop-active {
+      border-color: #0284c7 !important;
+      background-color: #f0f9ff !important;
+      transform: scale(1.01);
+      transition: all 0.15s ease;
+    }
+
+    /* スマホ下部ナビ用セーフエリア */
+    .safe-bottom {
+      padding-bottom: env(safe-area-inset-bottom, 16px);
+    }
+
+    /* スクロールバーの非表示（スマホライク） */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col antialiased select-none pb-24">
+
+  <!-- スマホ対応トップバー -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs px-3 py-2.5">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center text-white shadow-xs">
+          <i class="ph ph-tree-evergreen text-lg"></i>
+        </div>
+        <div class="min-w-0">
+          <div class="flex items-center gap-1.5">
+            <span class="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 shrink-0">介護付き有料</span>
+          </div>
+          <h1 class="text-xs sm:text-sm font-bold text-slate-800 leading-tight truncate">くすの木 人員配置</h1>
+          <p id="sync-status" class="text-[10px] text-slate-400 flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+            <span>自動保存ON</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- 右側アクションボタン（保存・設定・追加） -->
+      <div class="flex items-center gap-1.5">
+        <!-- スプレッドシート保存ボタン（手動即時保存も可能） -->
+        <button onclick="saveToCloud()" id="btn-save" title="今すぐ保存" class="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-lg text-xs font-semibold shadow-xs transition">
+          <i class="ph ph-cloud-check text-sm" id="btn-save-icon"></i>
+          <span id="btn-save-text">保存</span>
+        </button>
+
+        <!-- スタッフ新規追加 -->
+        <button onclick="openStaffModal()" class="w-8 h-8 flex items-center justify-center bg-sky-600 hover:bg-sky-700 active:scale-95 text-white rounded-lg shadow-xs transition">
+          <i class="ph ph-plus text-base font-bold"></i>
+        </button>
+
+        <!-- GAS設定モーダル呼び出し -->
+        <button onclick="openSettingsModal()" title="スプレッドシート連携設定" class="w-8 h-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition">
+          <i class="ph ph-gear text-base"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 px-3 py-3 w-full max-w-lg mx-auto">
+
+    <!-- ================= TAB 1: フロア配置 ================= -->
+    <section id="floor-tab" class="tab-content block space-y-3">
+
+      <!-- サマリーバー（2F vs 3F） -->
+      <div class="grid grid-cols-2 gap-2">
+        <!-- 2F カウンター -->
+        <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-emerald-800 flex items-center gap-1">
+              <span class="w-2 h-2 rounded-full bg-emerald-500"></span> 2階フロア
+            </span>
+            <span id="stat-floor2-badge" class="text-base font-bold text-emerald-700">0名</span>
+          </div>
+          <p id="stat-floor2-sub" class="text-[10px] text-emerald-600 mt-0.5 font-medium truncate">介護福祉士 0 / 看護 0</p>
+        </div>
+
+        <!-- 3F カウンター -->
+        <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-indigo-800 flex items-center gap-1">
+              <span class="w-2 h-2 rounded-full bg-indigo-500"></span> 3階フロア
+            </span>
+            <span id="stat-floor3-badge" class="text-base font-bold text-indigo-700">0名</span>
+          </div>
+          <p id="stat-floor3-sub" class="text-[10px] text-indigo-600 mt-0.5 font-medium truncate">介護福祉士 0 / 看護 0</p>
+        </div>
+      </div>
+
+      <!-- スマホ操作案内 -->
+      <div class="bg-sky-50/70 border border-sky-200/70 rounded-lg px-2.5 py-1.5 flex items-center justify-between text-[11px] text-sky-800">
+        <div class="flex items-center gap-1.5">
+          <i class="ph ph-hand-tap text-sm text-sky-600"></i>
+          <span>カードを<b>長押しして指でドラッグ</b>でフロアへドロップ移動</span>
+        </div>
+      </div>
+
+      <!-- 2階 ドロップゾーン -->
+      <div class="bg-white rounded-xl border-2 border-emerald-300 p-3 shadow-xs">
+        <div class="flex items-center justify-between pb-2 border-b border-emerald-100 mb-2">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+            <h2 class="text-xs font-bold text-slate-800">2階フロア配置</h2>
+          </div>
+          <span id="count-drop-floor2" class="text-xs font-bold text-emerald-700">0名</span>
+        </div>
+        <div id="drop-floor2" data-floor="2F" class="dropzone min-h-[90px] space-y-2 p-1 rounded-lg border-2 border-dashed border-slate-200 transition">
+          <!-- スタッフカードが挿入されます -->
+        </div>
+      </div>
+
+      <!-- 3階 ドロップゾーン -->
+      <div class="bg-white rounded-xl border-2 border-indigo-300 p-3 shadow-xs">
+        <div class="flex items-center justify-between pb-2 border-b border-indigo-100 mb-2">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+            <h2 class="text-xs font-bold text-slate-800">3階フロア配置</h2>
+          </div>
+          <span id="count-drop-floor3" class="text-xs font-bold text-indigo-700">0名</span>
+        </div>
+        <div id="drop-floor3" data-floor="3F" class="dropzone min-h-[90px] space-y-2 p-1 rounded-lg border-2 border-dashed border-slate-200 transition">
+          <!-- スタッフカードが挿入されます -->
+        </div>
+      </div>
+
+      <!-- 未配属・フリー ドロップゾーン -->
+      <div class="bg-white rounded-xl border border-slate-300 p-3 shadow-xs">
+        <div class="flex items-center justify-between pb-2 border-b border-slate-200 mb-2">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
+            <h2 class="text-xs font-bold text-slate-700">未配属 / フリー・ケアマネ</h2>
+          </div>
+          <span id="count-drop-unassigned" class="text-xs font-bold text-slate-500">0名</span>
+        </div>
+        <div id="drop-unassigned" data-floor="unassigned" class="dropzone min-h-[80px] space-y-2 p-1 rounded-lg border-2 border-dashed border-slate-200 transition">
+          <!-- スタッフカードが挿入されます -->
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ================= TAB 2: 委員会配置 ================= -->
+    <section id="committee-tab" class="tab-content hidden space-y-3">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xs font-bold text-slate-800">委員会・推進チーム配置</h2>
+          <p class="text-[10px] text-slate-500">指でスタッフを委員会枠へドロップして追加</p>
+        </div>
+        <button onclick="openCommitteeModal()" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-900 active:scale-95 text-white rounded-lg text-xs font-medium flex items-center gap-1 shadow-xs">
+          <i class="ph ph-plus-circle text-sm"></i>
+          <span>委員会追加</span>
+        </button>
+      </div>
+
+      <!-- スタッフドラッグプール（ここから指でドラッグして各委員会へドロップ） -->
+      <div class="bg-white rounded-xl border border-sky-200 p-2.5 shadow-xs">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-[11px] font-bold text-sky-800 flex items-center gap-1">
+            <i class="ph ph-hand-tap text-sky-600"></i> スタッフ一覧（長押しドラッグで下へ追加）
+          </span>
+          <span class="text-[10px] text-slate-400">横スクロール可</span>
+        </div>
+        <div id="committee-staff-pool" class="flex gap-2 overflow-x-auto pb-1.5 no-scrollbar py-0.5">
+          <!-- JS動的描画: ドラッグ可能なスタッフチップ -->
+        </div>
+      </div>
+
+      <!-- 委員会一覧カードコンテナ -->
+      <div id="committees-mobile-container" class="space-y-3">
+        <!-- JS動的描画 -->
+      </div>
+    </section>
+
+    <!-- ================= TAB 3: スタッフ台帳 ================= -->
+    <section id="staff-tab" class="tab-content hidden space-y-3">
+      <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-xs space-y-2.5">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xs font-bold text-slate-800">スタッフ台帳一覧</h2>
+          <span id="staff-list-total" class="text-xs font-bold text-sky-600">0名登録</span>
+        </div>
+
+        <!-- 検索ボックス -->
+        <div class="relative">
+          <i class="ph ph-magnifying-glass absolute left-3 top-2.5 text-slate-400"></i>
+          <input type="text" id="staff-search-input" oninput="renderStaffMobileList()" placeholder="氏名・資格で検索..." class="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-sky-500 bg-slate-50">
+        </div>
+      </div>
+
+      <!-- スタッフ簡易一覧リスト -->
+      <div id="staff-mobile-cards" class="space-y-2">
+        <!-- JS動的描画 -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- スマホ専用固定ボトムナビゲーション -->
+  <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-40 px-2 py-1.5 safe-bottom shadow-lg">
+    <div class="max-w-lg mx-auto grid grid-cols-3 gap-1">
+      <button onclick="switchTab('floor-tab')" id="nav-btn-floor-tab" class="nav-btn active flex flex-col items-center justify-center py-1.5 px-1 rounded-xl text-sky-600 font-bold transition">
+        <i class="ph ph-buildings text-xl"></i>
+        <span class="text-[10px] mt-0.5">フロア配置</span>
+      </button>
+      <button onclick="switchTab('committee-tab')" id="nav-btn-committee-tab" class="nav-btn flex flex-col items-center justify-center py-1.5 px-1 rounded-xl text-slate-400 font-medium transition">
+        <i class="ph ph-clipboard-text text-xl"></i>
+        <span class="text-[10px] mt-0.5">委員会配置</span>
+      </button>
+      <button onclick="switchTab('staff-tab')" id="nav-btn-staff-tab" class="nav-btn flex flex-col items-center justify-center py-1.5 px-1 rounded-xl text-slate-400 font-medium transition">
+        <i class="ph ph-address-book text-xl"></i>
+        <span class="text-[10px] mt-0.5">スタッフ台帳</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- スタッフ登録・編集モーダル -->
+  <div id="staff-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center hidden p-0 sm:p-4">
+    <div class="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+      <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+        <h3 id="staff-modal-title" class="text-sm font-bold text-slate-800">スタッフ登録</h3>
+        <button onclick="closeStaffModal()" class="text-slate-400 hover:text-slate-600 p-1">
+          <i class="ph ph-x text-lg"></i>
+        </button>
+      </div>
+
+      <form id="staff-form" onsubmit="saveStaff(event)" class="p-4 space-y-3 overflow-y-auto">
+        <input type="hidden" id="modal-staff-id">
+        <div>
+          <label class="block text-[11px] font-bold text-slate-700 mb-1">氏名 <span class="text-red-500">*</span></label>
+          <input type="text" id="modal-staff-name" required placeholder="例：鈴木 一郎" class="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 focus:outline-hidden">
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-[11px] font-bold text-slate-700 mb-1">役職 / ポジション</label>
+            <input type="text" id="modal-staff-role" placeholder="例：介護士、施設長など" class="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 focus:outline-hidden">
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-slate-700 mb-1">雇用形態</label>
+            <select id="modal-staff-employment" class="w-full px-2 py-2 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 bg-white">
+              <option value="常勤">常勤</option>
+              <option value="非常勤">非常勤</option>
+              <option value="夜勤専従">夜勤専従</option>
+              <option value="オタスケ">オタスケ</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-[11px] font-bold text-slate-700 mb-1">保有資格</label>
+            <select id="modal-staff-qualification" class="w-full px-2 py-2 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 bg-white">
+              <option value="介護福祉士">介護福祉士</option>
+              <option value="正看護師">正看護師</option>
+              <option value="准看護師">准看護師</option>
+              <option value="介護支援専門員">介護支援専門員</option>
+              <option value="社会福祉主事任用">社会福祉主事任用</option>
+              <option value="認知症介護基礎研修">認知症介護基礎研修</option>
+              <option value="介護職員初任者研修">初任者研修</option>
+              <option value="ヘルパー2級">ヘルパー2級</option>
+              <option value="実務者研修">実務者研修</option>
+              <option value="一般/資格なし">一般 / 研修中</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-slate-700 mb-1">配属フロア</label>
+            <select id="modal-staff-floor" class="w-full px-2 py-2 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 bg-white">
+              <option value="unassigned">未配属 / フリー</option>
+              <option value="2F">2階フロア</option>
+              <option value="3F">3階フロア</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-bold text-slate-700 mb-1">備考 / 保有資格2・特記事項</label>
+          <input type="text" id="modal-staff-notes" placeholder="例：社会福祉主事、送迎可など" class="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 focus:outline-hidden">
+        </div>
+
+        <div class="pt-2 flex items-center justify-end gap-2">
+          <button type="button" onclick="closeStaffModal()" class="px-3 py-2 text-xs text-slate-600 rounded-lg">キャンセル</button>
+          <button type="submit" class="px-4 py-2 text-xs bg-sky-600 active:bg-sky-700 text-white font-semibold rounded-lg shadow-xs">保存する</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 委員会メンバー編成モーダル -->
+  <div id="committee-assign-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center hidden p-0 sm:p-4">
+    <div class="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+      <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+        <div>
+          <h3 id="committee-assign-title" class="text-xs font-bold text-slate-800">委員会編成</h3>
+          <p class="text-[10px] text-slate-500">委員長の指名とメンバー選択</p>
+        </div>
+        <button onclick="closeCommitteeAssignModal()" class="text-slate-400 p-1">
+          <i class="ph ph-x text-lg"></i>
+        </button>
+      </div>
+
+      <div class="p-4 space-y-3 overflow-y-auto flex-1">
+        <input type="hidden" id="assign-committee-id">
+        <div>
+          <label class="block text-[11px] font-bold text-slate-700 mb-1">委員長（リーダー）</label>
+          <select id="assign-leader-select" class="w-full px-2 py-2 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 bg-white">
+            <!-- 動的挿入 -->
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-[11px] font-bold text-slate-700 mb-1">所属メンバー（タップして選択）</label>
+          <div id="assign-members-checklist" class="space-y-1.5 max-h-56 overflow-y-auto p-1">
+            <!-- チェックボックス動的挿入 -->
+          </div>
+        </div>
+      </div>
+
+      <div class="p-3 border-t border-slate-100 flex items-center justify-end gap-2 bg-slate-50">
+        <button type="button" onclick="closeCommitteeAssignModal()" class="px-3 py-1.5 text-xs text-slate-600 rounded-lg">キャンセル</button>
+        <button type="button" onclick="saveCommitteeAssignment()" class="px-4 py-1.5 text-xs bg-sky-600 active:bg-sky-700 text-white font-semibold rounded-lg shadow-xs">編成を更新</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 委員会作成・編集モーダル -->
+  <div id="committee-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center hidden p-0 sm:p-4">
+    <div class="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden p-4 space-y-3">
+      <div class="flex items-center justify-between border-b pb-2">
+        <h3 id="committee-modal-title" class="text-xs font-bold text-slate-800">委員会の設定</h3>
+        <button onclick="closeCommitteeModal()" class="text-slate-400 p-1"><i class="ph ph-x text-lg"></i></button>
+      </div>
+      <form onsubmit="saveCommitteeInfo(event)" class="space-y-3">
+        <input type="hidden" id="committee-modal-id">
+        <div>
+          <label class="block text-[11px] font-bold text-slate-700 mb-1">委員会名 <span class="text-red-500">*</span></label>
+          <input type="text" id="modal-committee-name" required placeholder="例：給食・栄養改善委員会" class="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 focus:outline-hidden">
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold text-slate-700 mb-1">活動頻度</label>
+          <input type="text" id="modal-committee-freq" placeholder="例：毎月第3水曜日" class="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 focus:outline-hidden">
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold text-slate-700 mb-1">目的 / 概要</label>
+          <textarea id="modal-committee-desc" rows="2" placeholder="例：摂食嚥下ケアの向上および嗜好調査の反映" class="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 focus:outline-hidden"></textarea>
+        </div>
+        <div class="pt-2 flex justify-between items-center">
+          <button type="button" id="btn-delete-committee" onclick="deleteCurrentCommittee()" class="px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 rounded-lg hidden flex items-center gap-1 font-medium">
+            <i class="ph ph-trash"></i> 削除
+          </button>
+          <div class="flex items-center gap-2 ml-auto">
+            <button type="button" onclick="closeCommitteeModal()" class="px-3 py-1.5 text-xs text-slate-600">キャンセル</button>
+            <button type="submit" class="px-4 py-1.5 text-xs bg-sky-600 active:bg-sky-700 text-white rounded-lg font-semibold shadow-xs">保存する</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- GAS・スプレッドシート連携設定モーダル -->
+  <div id="settings-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center hidden p-0 sm:p-4">
+    <div class="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl p-4 space-y-3">
+      <div class="flex items-center justify-between border-b pb-2">
+        <h3 class="text-xs font-bold text-slate-800">Google Apps Script 連携設定</h3>
+        <button onclick="closeSettingsModal()" class="text-slate-400 p-1"><i class="ph ph-x text-lg"></i></button>
+      </div>
+      <p class="text-[11px] text-slate-500 leading-relaxed">
+        Googleスプレッドシートの「ウェブアプリのデプロイURL」を設定すると、スマホから直接スプレッドシートへの保存・同期が可能になります。
+      </p>
+      <div>
+        <label class="block text-[11px] font-bold text-slate-700 mb-1">GAS Web App URL (https://script.google.com/...)</label>
+        <input type="url" id="gas-api-url" placeholder="https://script.google.com/macros/s/.../exec" class="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-sky-500 focus:outline-hidden">
+      </div>
+      <div class="flex justify-between items-center pt-2">
+        <button type="button" onclick="loadFromCloud()" class="px-3 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium flex items-center gap-1">
+          <i class="ph ph-download-simple"></i> スプレッドシートから読込
+        </button>
+        <button type="button" onclick="saveGasSettings()" class="px-4 py-1.5 text-xs bg-sky-600 text-white rounded-lg font-semibold">保存する</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- トースト通知 -->
+  <div id="toast" class="fixed bottom-20 left-1/2 transform -translate-x-1/2 z-50 transition-all duration-300 opacity-0 translate-y-4 pointer-events-none bg-slate-900/90 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 text-xs whitespace-nowrap">
+    <i id="toast-icon" class="ph ph-check-circle text-emerald-400 text-sm"></i>
+    <span id="toast-msg">完了しました</span>
+  </div>
+
+  <script>
+    // 介護付き有料老人ホーム くすの木 スタッフ台帳実データ (全29名)
+    const KUSUNOKI_STAFF_DATA = [
+      { id: 'st-1', name: '佐々木大介', role: '施設長', qualification: '介護福祉士', employment: '常勤', floor: 'unassigned', notes: '社会福祉主事' },
+      { id: 'st-2', name: '佐々木大介.', role: '介護士', qualification: '介護福祉士', employment: '常勤', floor: '2F', notes: '社会福祉主事' },
+      { id: 'st-3', name: '鴨勅光', role: '計画作成担当者', qualification: '介護支援専門員', employment: '常勤', floor: 'unassigned', notes: 'ケアマネ業務' },
+      { id: 'st-4', name: '星さち', role: '生活相談員', qualification: '社会福祉主事任用', employment: '常勤', floor: 'unassigned', notes: '生活相談員' },
+      { id: 'st-5', name: '齋藤美津子', role: '事務員', qualification: '一般/資格なし', employment: '非常勤', floor: 'unassigned', notes: '事務' },
+      { id: 'st-6', name: '鈴木梓紗', role: '看護師', qualification: '准看護師', employment: '常勤', floor: '2F', notes: '医療処置' },
+      { id: 'st-7', name: '小野早美', role: '看護師', qualification: '正看護師', employment: '常勤', floor: '3F', notes: '医療処置' },
+      { id: 'st-8', name: '半井紀江', role: '介護士', qualification: '介護福祉士', employment: '常勤', floor: '2F', notes: '' },
+      { id: 'st-9', name: '平子由美', role: '介護士', qualification: '認知症介護基礎研修', employment: '常勤', floor: '2F', notes: '' },
+      { id: 'st-10', name: '樋渡絵美', role: '介護士', qualification: 'ヘルパー2級', employment: '常勤', floor: '2F', notes: '' },
+      { id: 'st-11', name: '小玉悠奈', role: '介護士', qualification: '認知症介護基礎研修', employment: '常勤', floor: '2F', notes: '' },
+      { id: 'st-12', name: '小林志歩', role: '介護士', qualification: '認知症介護基礎研修', employment: '常勤', floor: '2F', notes: '' },
+      { id: 'st-13', name: '蛭田千明', role: '介護士', qualification: '介護福祉士', employment: '常勤', floor: '2F', notes: '' },
+      { id: 'st-14', name: '大町雄介', role: '顧問', qualification: '一般/資格なし', employment: '非常勤', floor: 'unassigned', notes: '顧問' },
+      { id: 'st-15', name: '上遠野広子', role: '介護士夜勤専従', qualification: '准看護師', employment: '夜勤専従', floor: '3F', notes: '夜勤専従' },
+      { id: 'st-16', name: '中村朋也', role: '介護士', qualification: '認知症介護基礎研修', employment: '常勤', floor: '3F', notes: '' },
+      { id: 'st-17', name: '園部彩', role: '介護士', qualification: '認知症介護基礎研修', employment: '常勤', floor: '3F', notes: '' },
+      { id: 'st-18', name: '奈良孝子', role: '清掃', qualification: '一般/資格なし', employment: '非常勤', floor: 'unassigned', notes: '環境美化・清掃' },
+      { id: 'st-19', name: '長岡直美', role: '介護士', qualification: 'ヘルパー2級', employment: '常勤', floor: '3F', notes: 'ホームヘルパー2級' },
+      { id: 'st-20', name: '本間愛美', role: '介護士', qualification: '介護職員初任者研修', employment: '常勤', floor: '3F', notes: '初任者研修修了' },
+      { id: 'st-21', name: '新妻聖士', role: '介護助手', qualification: 'ヘルパー2級', employment: '非常勤', floor: '2F', notes: '助手業務' },
+      { id: 'st-22', name: '志田広幸', role: '介護士', qualification: '介護職員初任者研修', employment: '常勤', floor: '3F', notes: '初任者研修修了' },
+      { id: 'st-23', name: '阿部貴大', role: '介護士', qualification: '介護職員初任者研修', employment: '常勤', floor: '3F', notes: '初任者研修修了' },
+      { id: 'st-24', name: '大島典子', role: '介護助手', qualification: '正看護師', employment: '非常勤', floor: '3F', notes: '看護師資格あり' },
+      { id: 'st-25', name: '園部怜心', role: '清掃', qualification: '一般/資格なし', employment: '非常勤', floor: 'unassigned', notes: '清掃' },
+      { id: 'st-26', name: '相田沙生', role: '介護士', qualification: '一般/資格なし', employment: '非常勤', floor: '2F', notes: '' },
+      { id: 'st-27', name: '前田昌子', role: '清掃', qualification: '一般/資格なし', employment: '非常勤', floor: 'unassigned', notes: '清掃' },
+      { id: 'st-28', name: '高橋和隼', role: '清掃', qualification: '一般/資格なし', employment: '非常勤', floor: 'unassigned', notes: '清掃' },
+      { id: 'st-29', name: '馬上征子', role: '介護士', qualification: '介護福祉士', employment: '常勤', floor: '3F', notes: '' }
+    ];
+
+    const DEFAULT_COMMITTEES = [
+      { id: 'com-1', name: '感染症対策・衛生委員会', leaderId: 'st-7', frequency: '毎月第1水曜', description: '感染予防マニュアル更新、衛生備品管理', members: ['st-7', 'st-6', 'st-8', 'st-15'] },
+      { id: 'com-2', name: '事故防止・ヒヤリハット委員会', leaderId: 'st-2', frequency: '毎月第2火曜', description: '転倒転落防止策の共有、再発予防', members: ['st-2', 'st-13', 'st-29', 'st-16'] },
+      { id: 'com-3', name: '身体拘束廃止委員会', leaderId: 'st-3', frequency: '3ヶ月に1回', description: '拘束ゼロの継続、ケア計画の見直し', members: ['st-3', 'st-4', 'st-1', 'st-22'] },
+      { id: 'com-4', name: '褥瘡予防・スキンケア委員会', leaderId: 'st-6', frequency: '毎月第3木曜', description: '褥瘡リスク者の巡回、除圧用具管理', members: ['st-6', 'st-7', 'st-24', 'st-12'] },
+      { id: 'com-5', name: 'レクリエーション・行事委員会', leaderId: 'st-13', frequency: '毎月第4金曜', description: '季節行事・レク活動の企画運営', members: ['st-13', 'st-9', 'st-10', 'st-17', 'st-20'] }
+    ];
+
+    let staffList = [];
+    let committees = [];
+    let gasUrl = '';
+    let autoSaveTimer = null; // 自動保存用デバウンスタイマー
+    const DATA_ROSTER_VERSION = 'kusunoki_v2';
+
+    // ================= 初期化 ＆ データ保存 =================
+    function initApp() {
+      // GAS URL
+      gasUrl = localStorage.getItem('carehome_gas_url') || '';
+      document.getElementById('gas-api-url').value = gasUrl;
+
+      // くすの木の実データへ更新（以前のサンプルデータが残っている場合は自動切替）
+      const rosterVersion = localStorage.getItem('carehome_roster_version');
+      const localStaff = localStorage.getItem('carehome_staff_data');
+      const localCom = localStorage.getItem('carehome_com_data');
+
+      if (rosterVersion !== DATA_ROSTER_VERSION || !localStaff) {
+        staffList = JSON.parse(JSON.stringify(KUSUNOKI_STAFF_DATA));
+        committees = JSON.parse(JSON.stringify(DEFAULT_COMMITTEES));
+        localStorage.setItem('carehome_staff_data', JSON.stringify(staffList));
+        localStorage.setItem('carehome_com_data', JSON.stringify(committees));
+        localStorage.setItem('carehome_roster_version', DATA_ROSTER_VERSION);
+      } else {
+        try {
+          staffList = localStaff ? JSON.parse(localStaff) : JSON.parse(JSON.stringify(KUSUNOKI_STAFF_DATA));
+          committees = localCom ? JSON.parse(localCom) : JSON.parse(JSON.stringify(DEFAULT_COMMITTEES));
+        } catch(e) {
+          staffList = JSON.parse(JSON.stringify(KUSUNOKI_STAFF_DATA));
+          committees = JSON.parse(JSON.stringify(DEFAULT_COMMITTEES));
+        }
+      }
+
+      // Google Apps Scriptの埋め込み実行(google.script.run)が使える環境かチェック
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        setSyncStatus('GAS接続・自動保存ON', 'emerald');
+        google.script.run
+          .withSuccessHandler(res => {
+            if (res && res.staffList && res.staffList.length > 0) {
+              staffList = res.staffList;
+              committees = res.committees || committees;
+              localStorage.setItem('carehome_staff_data', JSON.stringify(staffList));
+              localStorage.setItem('carehome_com_data', JSON.stringify(committees));
+              refreshAllUI();
+              showToast('スプレッドシートから最新データを取得しました');
+            }
+          })
+          .fetchAllData();
+      } else if (gasUrl) {
+        setSyncStatus('自動保存ON', 'emerald');
+      }
+
+      refreshAllUI();
+      setupTouchDnD();
+    }
+
+    function saveLocalState() {
+      localStorage.setItem('carehome_staff_data', JSON.stringify(staffList));
+      localStorage.setItem('carehome_com_data', JSON.stringify(committees));
+      updateCountsAndBadges();
+
+      // 操作後、落ち着いたタイミングでクラウド/スプレッドシートへ自動保存
+      triggerAutoSave();
+    }
+
+    // 操作が一段落したタイミング（約2秒後）で自動同期
+    function triggerAutoSave() {
+      setSyncStatus('変更を検知…', 'amber');
+      const saveBtn = document.getElementById('btn-save');
+      if (saveBtn) {
+        saveBtn.classList.replace('bg-emerald-600', 'bg-amber-600');
+        document.getElementById('btn-save-icon').className = 'ph ph-cloud-arrow-up text-sm';
+      }
+
+      if (autoSaveTimer) clearTimeout(autoSaveTimer);
+      autoSaveTimer = setTimeout(() => {
+        saveToCloud(true);
+      }, 2000);
+    }
+
+    function refreshAllUI() {
+      renderFloorCards();
+      renderCommitteesMobile();
+      renderStaffMobileList();
+      updateCountsAndBadges();
+    }
+
+    // ================= スマホ用 タッチドラッグ＆ドロップ =================
+    let activeTouchCard = null;
+    let touchGhostEl = null;
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let isDragging = false;
+
+    function setupTouchDnD() {
+      // 全体でtouchmove / touchendを監視
+      document.addEventListener('touchmove', handleTouchMove, { passive: false });
+      document.addEventListener('touchend', handleTouchEnd);
+      document.addEventListener('touchcancel', handleTouchCancel);
+      setupDesktopCommitteeDropzones();
+    }
+
+    /**
+     * カードにタッチ＆PCドラッグイベントを登録
+     * @param {HTMLElement} cardEl 
+     * @param {string} staffId 
+     * @param {string|null} sourceCommitteeId (委員会からのドラッグ時)
+     */
+    function attachCardTouchEvents(cardEl, staffId, sourceCommitteeId = null) {
+      cardEl.classList.add('draggable-card');
+
+      // デスクトップ用 HTML5 DnD
+      cardEl.setAttribute('draggable', 'true');
+      cardEl.ondragstart = (e) => {
+        e.dataTransfer.setData('text/plain', staffId);
+        if (sourceCommitteeId) {
+          e.dataTransfer.setData('sourceCommitteeId', sourceCommitteeId);
+        }
+        document.body.classList.add('drag-in-progress');
+        setTimeout(() => cardEl.classList.add('opacity-40'), 0);
+      };
+      cardEl.ondragend = () => {
+        document.body.classList.remove('drag-in-progress');
+        cardEl.classList.remove('opacity-40');
+      };
+
+      // スマホ用 タッチイベント
+      cardEl.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        // ボタンやセレクトを直接タップした時はドラッグを開始しない
+        if (e.target.closest('button, select, input, a')) return;
+
+        const touch = e.touches[0];
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+        activeTouchCard = {
+          el: cardEl,
+          staffId: staffId,
+          sourceCommitteeId: sourceCommitteeId
+        };
+        isDragging = false;
+      }, { passive: true });
+    }
+
+    function handleTouchMove(e) {
+      if (!activeTouchCard) return;
+
+      const touch = e.touches[0];
+      const deltaX = Math.abs(touch.clientX - touchStartX);
+      const deltaY = Math.abs(touch.clientY - touchStartY);
+
+      // 移動距離が閾値（8px）を超えたらドラッグ開始
+      if (!isDragging && (deltaX > 8 || deltaY > 8)) {
+        isDragging = true;
+        document.body.classList.add('drag-in-progress');
+
+        // ゴースト要素を作成
+        touchGhostEl = activeTouchCard.el.cloneNode(true);
+        touchGhostEl.classList.add('touch-drag-ghost');
+        touchGhostEl.style.width = Math.min(activeTouchCard.el.offsetWidth, 300) + 'px';
+        document.body.appendChild(touchGhostEl);
+        activeTouchCard.el.classList.add('opacity-30');
+      }
+
+      if (isDragging) {
+        // スクロールを防止
+        e.preventDefault();
+
+        if (touchGhostEl) {
+          touchGhostEl.style.left = touch.clientX + 'px';
+          touchGhostEl.style.top = touch.clientY + 'px';
+        }
+
+        highlightDropZoneUnderTouch(touch.clientX, touch.clientY);
+      }
+    }
+
+    function handleTouchEnd(e) {
+      if (!activeTouchCard) return;
+
+      if (isDragging) {
+        const touch = e.changedTouches[0];
+        const targetDropzone = findDropZoneAtPoint(touch.clientX, touch.clientY);
+
+        if (targetDropzone) {
+          const targetFloor = targetDropzone.getAttribute('data-floor');
+          const targetComId = targetDropzone.getAttribute('data-committee-id');
+
+          if (targetFloor) {
+            moveStaffToFloor(activeTouchCard.staffId, targetFloor);
+          } else if (targetComId) {
+            if (activeTouchCard.sourceCommitteeId && activeTouchCard.sourceCommitteeId !== targetComId) {
+              // 委員会Aから委員会Bへの配置移動
+              moveStaffBetweenCommittees(activeTouchCard.staffId, activeTouchCard.sourceCommitteeId, targetComId);
+            } else {
+              addStaffToCommittee(activeTouchCard.staffId, targetComId);
+            }
+          }
+        }
+      }
+
+      cleanupDragState();
+    }
+
+    function handleTouchCancel() {
+      cleanupDragState();
+    }
+
+    function cleanupDragState() {
+      document.body.classList.remove('drag-in-progress');
+      if (touchGhostEl) {
+        touchGhostEl.remove();
+        touchGhostEl = null;
+      }
+      if (activeTouchCard) {
+        activeTouchCard.el.classList.remove('opacity-30');
+        activeTouchCard = null;
+      }
+      isDragging = false;
+      clearAllDropHighlights();
+    }
+
+    function findDropZoneAtPoint(x, y) {
+      const el = document.elementFromPoint(x, y);
+      if (!el) return null;
+      return el.closest('.dropzone, .committee-dropzone');
+    }
+
+    function highlightDropZoneUnderTouch(x, y) {
+      clearAllDropHighlights();
+      const zone = findDropZoneAtPoint(x, y);
+      if (zone) {
+        zone.classList.add('drop-active');
+      }
+    }
+
+    function clearAllDropHighlights() {
+      document.querySelectorAll('.dropzone, .committee-dropzone').forEach(z => z.classList.remove('drop-active'));
+    }
+
+    // デスクトップ用委員会ドロップゾーンの設定
+    function setupDesktopCommitteeDropzones() {
+      document.querySelectorAll('.committee-dropzone').forEach(zone => {
+        zone.ondragover = (e) => {
+          e.preventDefault();
+          zone.classList.add('drop-active');
+        };
+        zone.ondragleave = () => zone.classList.remove('drop-active');
+        zone.ondrop = (e) => {
+          e.preventDefault();
+          zone.classList.remove('drop-active');
+          const staffId = e.dataTransfer.getData('text/plain');
+          const sourceComId = e.dataTransfer.getData('sourceCommitteeId');
+          const committeeId = zone.getAttribute('data-committee-id');
+
+          if (staffId && committeeId) {
+            if (sourceComId && sourceComId !== committeeId) {
+              moveStaffBetweenCommittees(staffId, sourceComId, committeeId);
+            } else {
+              addStaffToCommittee(staffId, committeeId);
+            }
+          }
+        };
+      });
+    }
+
+    // デスクトップ用フロアドロップゾーンイベント
+    document.querySelectorAll('.dropzone').forEach(zone => {
+      zone.ondragover = (e) => {
+        e.preventDefault();
+        zone.classList.add('drop-active');
+      };
+      zone.ondragleave = () => zone.classList.remove('drop-active');
+      zone.ondrop = (e) => {
+        e.preventDefault();
+        zone.classList.remove('drop-active');
+        const staffId = e.dataTransfer.getData('text/plain');
+        const targetFloor = zone.getAttribute('data-floor');
+        if (staffId && targetFloor) {
+          moveStaffToFloor(staffId, targetFloor);
+        }
+      };
+    });
+
+    function moveStaffToFloor(staffId, targetFloor) {
+      const staff = staffList.find(s => s.id === staffId);
+      if (!staff || staff.floor === targetFloor) return;
+
+      staff.floor = targetFloor;
+      saveLocalState();
+      renderFloorCards();
+      const floorName = targetFloor === 'unassigned' ? '未配属' : `${targetFloor}フロア`;
+      showToast(`${staff.name} を ${floorName} に移動しました`);
+    }
+
+    function moveStaffBetweenCommittees(staffId, fromComId, toComId) {
+      const staff = staffList.find(s => s.id === staffId);
+      const fromCom = committees.find(c => c.id === fromComId);
+      const toCom = committees.find(c => c.id === toComId);
+      if (!fromCom || !toCom || !staff) return;
+
+      // 元の委員会から削除
+      fromCom.members = fromCom.members.filter(id => id !== staffId);
+      if (fromCom.leaderId === staffId) {
+        fromCom.leaderId = fromCom.members[0] || '';
+      }
+
+      // 新しい委員会へ追加
+      if (!toCom.members.includes(staffId)) {
+        toCom.members.push(staffId);
+        if (!toCom.leaderId) toCom.leaderId = staffId;
+      }
+
+      saveLocalState();
+      renderCommitteesMobile();
+      renderFloorCards();
+      showToast(`${staff.name} を ${toCom.name} に移動しました`);
+    }
+
+    // ================= フロアカード描画 =================
+    function getQualColor(qual) {
+      if (!qual) return 'bg-slate-100 text-slate-700 border-slate-200';
+      if (qual.includes('介護福祉士')) return 'bg-sky-100 text-sky-800 border-sky-200';
+      if (qual.includes('看護')) return 'bg-rose-100 text-rose-800 border-rose-200';
+      if (qual.includes('支援専門員') || qual.includes('ケアマネ')) return 'bg-purple-100 text-purple-800 border-purple-200';
+      if (qual.includes('社会福祉')) return 'bg-amber-100 text-amber-800 border-amber-200';
+      if (qual.includes('認知症')) return 'bg-teal-100 text-teal-800 border-teal-200';
+      if (qual.includes('初任者') || qual.includes('ヘルパー') || qual.includes('実務者')) return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      return 'bg-slate-100 text-slate-700 border-slate-200';
+    }
+
+    function createMobileStaffCard(staff) {
+      const card = document.createElement('div');
+      card.id = `card-${staff.id}`;
+      card.className = "draggable-card bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs flex items-center justify-between active:scale-[0.99] transition";
+
+      // 委員名タグ
+      const staffComms = committees
+        .filter(c => c.members.includes(staff.id))
+        .map(c => c.name.replace(/委員会|対策委員会/g, ''));
+      
+      const commBadge = staffComms.length > 0
+        ? `<div class="text-[10px] text-slate-400 mt-0.5 flex flex-wrap gap-1">
+             ${staffComms.map(name => `<span class="bg-slate-100 px-1 rounded text-slate-600">${name}</span>`).join('')}
+           </div>`
+        : '';
+
+      card.innerHTML = `
+        <div class="flex items-center gap-2 flex-1 min-w-0 pr-2 pointer-events-none">
+          <i class="ph ph-dots-six-vertical text-slate-400 text-base shrink-0"></i>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="font-bold text-xs text-slate-800">${staff.name}</span>
+              <span class="text-[9px] px-1.5 py-0.2 rounded border font-medium ${getQualColor(staff.qualification)}">${staff.qualification}</span>
+              <span class="text-[10px] text-slate-400">${staff.employment}</span>
+            </div>
+            <div class="text-[10px] text-slate-500 mt-0.5">${staff.role || '介護職'} ${staff.notes ? '• ' + staff.notes : ''}</div>
+            ${commBadge}
+          </div>
+        </div>
+        <!-- ワンタッチ移動ボタン（タップでポップアップから即移動可能） -->
+        <div class="flex items-center gap-1 shrink-0">
+          <button type="button" onclick="openFloorQuickMove('${staff.id}')" title="フロアを移動" class="px-2 py-1 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 rounded-md text-[11px] font-bold flex items-center gap-1 active:scale-95 transition">
+            <i class="ph ph-arrows-left-right"></i>
+            <span>${staff.floor === 'unassigned' ? '未配' : staff.floor}</span>
+          </button>
+        </div>
+      `;
+
+      attachCardTouchEvents(card, staff.id, null);
+      return card;
+    }
+
+    function renderFloorCards() {
+      const drop2F = document.getElementById('drop-floor2');
+      const drop3F = document.getElementById('drop-floor3');
+      const dropUn = document.getElementById('drop-unassigned');
+
+      drop2F.innerHTML = '';
+      drop3F.innerHTML = '';
+      dropUn.innerHTML = '';
+
+      let count2 = 0, count3 = 0, countUn = 0;
+
+      staffList.forEach(staff => {
+        const card = createMobileStaffCard(staff);
+        if (staff.floor === '2F') {
+          drop2F.appendChild(card);
+          count2++;
+        } else if (staff.floor === '3F') {
+          drop3F.appendChild(card);
+          count3++;
+        } else {
+          dropUn.appendChild(card);
+          countUn++;
+        }
+      });
+
+      if (count2 === 0) drop2F.innerHTML = '<p class="text-[11px] text-slate-400 text-center py-2.5">スタッフをここにドロップ</p>';
+      if (count3 === 0) drop3F.innerHTML = '<p class="text-[11px] text-slate-400 text-center py-2.5">スタッフをここにドロップ</p>';
+      if (countUn === 0) dropUn.innerHTML = '<p class="text-[11px] text-slate-400 text-center py-2.5">未配属のスタッフはいません</p>';
+
+      document.getElementById('count-drop-floor2').innerText = `${count2}名`;
+      document.getElementById('count-drop-floor3').innerText = `${count3}名`;
+      document.getElementById('count-drop-unassigned').innerText = `${countUn}名`;
+    }
+
+    // ================= 委員会描画 =================
+    function renderCommitteesMobile() {
+      renderCommitteeStaffPool();
+
+      const container = document.getElementById('committees-mobile-container');
+      container.innerHTML = '';
+
+      committees.forEach(c => {
+        const members = staffList.filter(s => c.members.includes(s.id));
+
+        const card = document.createElement('div');
+        card.className = "bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs space-y-2.5";
+
+        card.innerHTML = `
+          <div class="flex items-start justify-between pb-2 border-b border-slate-100">
+            <div class="flex-1 pr-2">
+              <div class="flex items-center gap-1.5">
+                <h3 class="font-bold text-sm text-slate-800">${c.name}</h3>
+                <button onclick="openCommitteeModal('${c.id}')" title="名前・概要を編集" class="p-1 text-slate-400 hover:text-sky-600 active:scale-95 transition">
+                  <i class="ph ph-pencil-simple text-sm"></i>
+                </button>
+              </div>
+              <p class="text-[11px] text-slate-400 mt-0.5">${c.frequency || '頻度未設定'} • ${c.description || '概要未設定'}</p>
+            </div>
+            <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200 shrink-0">${members.length}名</span>
+          </div>
+
+          <!-- ドロップゾーン ＆ メンバー一覧 -->
+          <div id="committee-drop-${c.id}" class="committee-dropzone min-h-[72px] space-y-1.5 p-2 rounded-xl border-2 border-dashed border-sky-200 bg-sky-50/20 transition" data-committee-id="${c.id}">
+            <!-- メンバーカードが動的挿入されます -->
+          </div>
+
+          <div class="pt-1 flex items-center justify-between">
+            <span class="text-[10px] text-slate-400 flex items-center gap-1">
+              <i class="ph-fill ph-crown text-amber-500"></i> 王冠で委員長切替 / 指で他へ移動
+            </span>
+            <button onclick="openCommitteeAssignModal('${c.id}')" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 active:bg-slate-200 text-slate-700 font-medium rounded-md text-[11px] flex items-center gap-1 transition">
+              <i class="ph ph-list-checks"></i> 一括選択
+            </button>
+          </div>
+        `;
+
+        container.appendChild(card);
+
+        // 各メンバーカードの生成＆ドラッグ可能化（配置した人の移動に対応！）
+        const dropEl = card.querySelector(`#committee-drop-${c.id}`);
+        if (members.length === 0) {
+          dropEl.innerHTML = `
+            <div class="text-center py-3 text-sky-600/70 text-xs flex flex-col items-center justify-center gap-1">
+              <i class="ph ph-hand-tap text-base"></i>
+              <span>スタッフをここに指でドロップして追加</span>
+            </div>
+          `;
+        } else {
+          members.forEach(m => {
+            const isLeader = m.id === c.leaderId;
+            const memberRow = document.createElement('div');
+            memberRow.id = `com-member-${c.id}-${m.id}`;
+            memberRow.className = `draggable-card flex items-center justify-between p-2 rounded-lg border transition ${
+              isLeader ? 'bg-amber-50/90 border-amber-300 ring-1 ring-amber-200' : 'bg-slate-50 border-slate-200'
+            }`;
+
+            memberRow.innerHTML = `
+              <div class="flex items-center gap-2 min-w-0 flex-1">
+                <i class="ph ph-dots-six-vertical text-slate-400 text-base shrink-0"></i>
+                <button type="button" onclick="toggleCommitteeLeader('${c.id}', '${m.id}')" title="${isLeader ? '委員長を解除' : '委員長に指名'}" class="p-1 rounded-md transition ${isLeader ? 'text-amber-600 hover:bg-amber-100' : 'text-slate-300 hover:text-amber-500 hover:bg-slate-200'}">
+                  <i class="ph-fill ph-crown text-base"></i>
+                </button>
+                <div class="truncate flex-1">
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <span class="font-bold text-xs text-slate-900 tracking-wide">${m.name}</span>
+                    ${isLeader ? '<span class="text-[9px] px-1.5 py-0.2 bg-amber-500 text-white font-bold rounded shadow-2xs">委員長</span>' : ''}
+                    <span class="text-[10px] px-1 py-0.2 rounded font-medium ${m.floor === '2F' ? 'bg-emerald-100 text-emerald-800' : m.floor === '3F' ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-200 text-slate-700'}">${m.floor === 'unassigned' ? '未配属' : m.floor}</span>
+                  </div>
+                  <div class="text-[10px] text-slate-500 mt-0.5">${m.qualification} • ${m.role || '介護職'}</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-1 shrink-0 ml-1">
+                <!-- クイック移動ボタン -->
+                <button type="button" onclick="openCommitteeQuickMove('${m.id}', '${c.id}')" title="他の委員会へ移動" class="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-md transition">
+                  <i class="ph ph-arrows-left-right text-sm"></i>
+                </button>
+                <!-- 除外ボタン -->
+                <button type="button" onclick="removeStaffFromCommittee('${m.id}', '${c.id}')" title="委員会から除外" class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-full transition">
+                  <i class="ph ph-x text-sm font-bold"></i>
+                </button>
+              </div>
+            `;
+
+            // 委員会内のメンバーも指で掴んで他委員会へ移動できるようにする
+            attachCardTouchEvents(memberRow, m.id, c.id);
+            dropEl.appendChild(memberRow);
+          });
+        }
+      });
+
+      setupDesktopCommitteeDropzones();
+    }
+
+    // 委員会タブ上部のドラッグ用スタッフプール
+    function renderCommitteeStaffPool() {
+      const pool = document.getElementById('committee-staff-pool');
+      if (!pool) return;
+      pool.innerHTML = '';
+
+      staffList.forEach(s => {
+        const item = document.createElement('div');
+        item.id = `pool-staff-${s.id}`;
+        item.className = "draggable-card shrink-0 px-2.5 py-1.5 bg-slate-50 hover:bg-sky-50 border border-slate-200 rounded-lg shadow-2xs flex items-center gap-1.5 active:scale-95 transition select-none";
+        item.innerHTML = `
+          <i class="ph ph-dots-six-vertical text-slate-400"></i>
+          <div>
+            <div class="flex items-center gap-1">
+              <span class="font-bold text-xs text-slate-800">${s.name}</span>
+              <span class="text-[9px] px-1 py-0.2 rounded font-medium ${s.floor === '2F' ? 'bg-emerald-100 text-emerald-700' : s.floor === '3F' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-600'}">${s.floor === 'unassigned' ? '未' : s.floor}</span>
+            </div>
+          </div>
+        `;
+        attachCardTouchEvents(item, s.id, null);
+        pool.appendChild(item);
+      });
+    }
+
+    // ================= クイック移動アクションシート（タップで確実に移動） =================
+    function openFloorQuickMove(staffId) {
+      const staff = staffList.find(s => s.id === staffId);
+      if (!staff) return;
+
+      document.getElementById('quick-move-title').innerText = `${staff.name} さんのフロア配置`;
+      document.getElementById('quick-move-subtitle').innerText = '移動先フロアをタップしてください';
+
+      const optionsContainer = document.getElementById('quick-move-options');
+      const destinations = [
+        { key: '2F', name: '2階フロア', badge: 'bg-emerald-100 text-emerald-800' },
+        { key: '3F', name: '3階フロア', badge: 'bg-indigo-100 text-indigo-800' },
+        { key: 'unassigned', name: '未配属 / フリー・ケアマネ', badge: 'bg-slate-200 text-slate-700' }
+      ];
+
+      optionsContainer.innerHTML = destinations.map(dest => {
+        const isCurrent = staff.floor === dest.key;
+        return `
+          <button type="button" onclick="moveStaffToFloor('${staff.id}', '${dest.key}'); closeQuickMoveModal();" class="w-full flex items-center justify-between p-3 rounded-xl border ${
+            isCurrent ? 'bg-sky-50 border-sky-300 ring-2 ring-sky-200 font-bold' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+          } transition active:scale-[0.98]">
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 rounded text-xs font-bold ${dest.badge}">${dest.key === 'unassigned' ? '未' : dest.key}</span>
+              <span class="text-xs text-slate-800">${dest.name}</span>
+            </div>
+            ${isCurrent ? '<span class="text-xs text-sky-600 font-bold flex items-center gap-1"><i class="ph-bold ph-check"></i> 現在</span>' : '<i class="ph ph-arrow-right text-slate-400"></i>'}
+          </button>
+        `;
+      }).join('');
+
+      document.getElementById('quick-move-modal').classList.remove('hidden');
+    }
+
+    function openCommitteeQuickMove(staffId, currentCommitteeId) {
+      const staff = staffList.find(s => s.id === staffId);
+      const currentCom = committees.find(c => c.id === currentCommitteeId);
+      if (!staff || !currentCom) return;
+
+      document.getElementById('quick-move-title').innerText = `${staff.name} さんの委員会移動`;
+      document.getElementById('quick-move-subtitle').innerText = `現在「${currentCom.name}」から移動先を選択`;
+
+      const optionsContainer = document.getElementById('quick-move-options');
+      optionsContainer.innerHTML = committees.map(c => {
+        const isCurrent = c.id === currentCommitteeId;
+        return `
+          <button type="button" onclick="moveStaffBetweenCommittees('${staff.id}', '${currentCommitteeId}', '${c.id}'); closeQuickMoveModal();" ${isCurrent ? 'disabled' : ''} class="w-full flex items-center justify-between p-3 rounded-xl border ${
+            isCurrent ? 'bg-slate-100 border-slate-200 opacity-60' : 'bg-slate-50 border-slate-200 hover:bg-sky-50 active:scale-[0.98]'
+          } transition">
+            <span class="text-xs font-bold text-slate-800">${c.name}</span>
+            ${isCurrent ? '<span class="text-[11px] text-slate-400">所属中</span>' : '<i class="ph ph-arrow-right text-sky-600"></i>'}
+          </button>
+        `;
+      }).join('');
+
+      // 委員会から解除する選択肢も用意
+      optionsContainer.innerHTML += `
+        <button type="button" onclick="removeStaffFromCommittee('${staff.id}', '${currentCommitteeId}'); closeQuickMoveModal();" class="w-full flex items-center justify-center gap-1.5 p-2.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-xs font-bold active:scale-[0.98] transition mt-2">
+          <i class="ph ph-x"></i> この委員会から除外する
+        </button>
+      `;
+
+      document.getElementById('quick-move-modal').classList.remove('hidden');
+    }
+
+    function closeQuickMoveModal(e = null) {
+      const modal = document.getElementById('quick-move-modal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    // 委員会へのスタッフ追加（ドロップ時）
+    function addStaffToCommittee(staffId, committeeId) {
+      const com = committees.find(c => c.id === committeeId);
+      const staff = staffList.find(s => s.id === staffId);
+      if (!com || !staff) return;
+
+      if (com.members.includes(staffId)) {
+        showToast(`${staff.name} さんは既に所属しています`);
+        return;
+      }
+
+      com.members.push(staffId);
+      // 最初のメンバーの場合は自動で委員長に設定
+      if (!com.leaderId) {
+        com.leaderId = staffId;
+      }
+
+      saveLocalState();
+      renderCommitteesMobile();
+      renderFloorCards(); // スタッフカード側の委員会バッジも連動更新
+      showToast(`${staff.name} さんを ${com.name} に追加しました`);
+    }
+
+    // 委員会からの除外
+    function removeStaffFromCommittee(staffId, committeeId) {
+      const com = committees.find(c => c.id === committeeId);
+      const staff = staffList.find(s => s.id === staffId);
+      if (!com) return;
+
+      com.members = com.members.filter(id => id !== staffId);
+      if (com.leaderId === staffId) {
+        com.leaderId = com.members[0] || '';
+      }
+
+      saveLocalState();
+      renderCommitteesMobile();
+      renderFloorCards();
+      showToast(`${staff ? staff.name : 'スタッフ'} を委員会から解除しました`);
+    }
+
+    // 委員長（リーダー）の切り替えトグル
+    function toggleCommitteeLeader(committeeId, staffId) {
+      const com = committees.find(c => c.id === committeeId);
+      const staff = staffList.find(s => s.id === staffId);
+      if (!com || !staff) return;
+
+      if (com.leaderId === staffId) {
+        com.leaderId = '';
+        showToast(`${staff.name} さんの委員長を解除しました`);
+      } else {
+        com.leaderId = staffId;
+        showToast(`${staff.name} さんを委員長に指名しました`);
+      }
+
+      saveLocalState();
+      renderCommitteesMobile();
+    }
+
+    // ================= スタッフ台帳描画 =================
+    function renderStaffMobileList() {
+      const container = document.getElementById('staff-mobile-cards');
+      const query = (document.getElementById('staff-search-input')?.value || '').trim().toLowerCase();
+      container.innerHTML = '';
+
+      const filtered = staffList.filter(s =>
+        s.name.toLowerCase().includes(query) ||
+        s.qualification.toLowerCase().includes(query) ||
+        (s.role && s.role.toLowerCase().includes(query))
+      );
+
+      document.getElementById('staff-list-total').innerText = `${filtered.length}名登録`;
+
+      if (filtered.length === 0) {
+        container.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">該当するスタッフがいません</p>';
+        return;
+      }
+
+      filtered.forEach(s => {
+        const row = document.createElement('div');
+        row.className = "bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between";
+        row.innerHTML = `
+          <div>
+            <div class="flex items-center gap-1.5">
+              <span class="font-bold text-xs text-slate-800">${s.name}</span>
+              <span class="text-[9px] px-1.5 py-0.2 rounded border font-medium ${getQualColor(s.qualification)}">${s.qualification}</span>
+            </div>
+            <p class="text-[10px] text-slate-400 mt-0.5">${s.role || 'スタッフ'} • ${s.employment} • 配属: <strong class="text-slate-600">${s.floor === 'unassigned' ? '未配属' : s.floor}</strong></p>
+          </div>
+          <div class="flex items-center gap-1">
+            <button onclick="openStaffModal('${s.id}')" class="p-1.5 text-slate-500 hover:text-sky-600 active:scale-95"><i class="ph ph-pencil-simple text-base"></i></button>
+            <button onclick="deleteStaff('${s.id}')" class="p-1.5 text-slate-400 hover:text-red-500 active:scale-95"><i class="ph ph-trash text-base"></i></button>
+          </div>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    // ================= Googleスプレッドシート連携保存 =================
+    async function saveToCloud(isAuto = false) {
+      if (autoSaveTimer) {
+        clearTimeout(autoSaveTimer);
+        autoSaveTimer = null;
+      }
+
+      const saveBtn = document.getElementById('btn-save');
+      const saveIcon = document.getElementById('btn-save-icon');
+      const saveText = document.getElementById('btn-save-text');
+
+      saveBtn.disabled = true;
+      saveBtn.className = 'flex items-center gap-1 px-3 py-1.5 bg-sky-600 text-white rounded-lg text-xs font-semibold shadow-xs transition';
+      saveIcon.className = 'ph ph-spinner-gap animate-spin text-sm';
+      saveText.innerText = '保存中';
+      setSyncStatus('保存中...', 'sky');
+
+      // 1. ローカルストレージは既に反映済み
+
+      // 2. GAS実行 (google.script.run がある場合)
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(() => {
+            resetSaveBtn();
+            setSyncStatus('自動保存ON', 'emerald');
+            showToast('スプレッドシートに保存しました');
+          })
+          .withFailureHandler(err => {
+            resetSaveBtn();
+            setSyncStatus('保存失敗', 'rose');
+            showToast('保存に失敗しました: ' + err);
+          })
+          .saveAllData({ staffList, committees });
+        return;
+      }
+
+      // 3. Web App URL (fetch POST) がある場合
+      if (gasUrl) {
+        try {
+          const payload = JSON.stringify({ staffList, committees });
+          await fetch(gasUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: payload
+          });
+          resetSaveBtn();
+          setSyncStatus('自動保存ON', 'emerald');
+          showToast('スプレッドシートに保存しました');
+        } catch (err) {
+          resetSaveBtn();
+          setSyncStatus('通信エラー', 'rose');
+          showToast('送信エラー: ' + err.message);
+        }
+      } else {
+        // GAS URL未設定時はローカルのみ保存
+        setTimeout(() => {
+          resetSaveBtn();
+          setSyncStatus('自動保存ON（端末内）', 'emerald');
+          showToast('保存しました');
+        }, 300);
+      }
+    }
+
+    function resetSaveBtn() {
+      const saveBtn = document.getElementById('btn-save');
+      const saveIcon = document.getElementById('btn-save-icon');
+      const saveText = document.getElementById('btn-save-text');
+      if (!saveBtn) return;
+      saveBtn.disabled = false;
+      saveBtn.className = 'flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-lg text-xs font-semibold shadow-xs transition';
+      saveIcon.className = 'ph ph-cloud-check text-sm';
+      saveText.innerText = '保存';
+    }
+
+    async function loadFromCloud() {
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(res => {
+            if (res && res.staffList) {
+              staffList = res.staffList;
+              committees = res.committees || [];
+              saveLocalState();
+              refreshAllUI();
+              closeSettingsModal();
+              showToast('スプレッドシートから読み込みました');
+            }
+          })
+          .fetchAllData();
+        return;
+      }
+
+      if (!gasUrl) {
+        showToast('GASのWeb App URLを設定してください');
+        return;
+      }
+
+      try {
+        const res = await fetch(`${gasUrl}?action=getData`);
+        const data = await res.json();
+        if (data && data.staffList) {
+          staffList = data.staffList;
+          committees = data.committees || [];
+          saveLocalState();
+          refreshAllUI();
+          closeSettingsModal();
+          showToast('スプレッドシートから読み込みました');
+        }
+      } catch (err) {
+        showToast('読み込み失敗: ' + err.message);
+      }
+    }
+
+    function saveGasSettings() {
+      gasUrl = document.getElementById('gas-api-url').value.trim();
+      localStorage.setItem('carehome_gas_url', gasUrl);
+      closeSettingsModal();
+      if (gasUrl) {
+        setSyncStatus('スプレッドシート連携可能', 'emerald');
+        showToast('連携URLを保存しました');
+      } else {
+        setSyncStatus('ローカル保存モード', 'slate');
+        showToast('ローカルモードに設定しました');
+      }
+    }
+
+    function setSyncStatus(text, color) {
+      const el = document.getElementById('sync-status');
+      if (!el) return;
+      const colorMap = {
+        emerald: 'bg-emerald-500',
+        amber: 'bg-amber-500',
+        sky: 'bg-sky-500',
+        rose: 'bg-rose-500',
+        slate: 'bg-slate-400'
+      };
+      const dotColor = colorMap[color] || 'bg-slate-400';
+      el.innerHTML = `
+        <span class="w-1.5 h-1.5 rounded-full ${dotColor}"></span>
+        <span>${text}</span>
+      `;
+    }
+
+    // ================= タブ切り替え =================
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      const active = document.getElementById(tabId);
+      if (active) active.classList.remove('hidden');
+
+      document.querySelectorAll('.nav-btn').forEach(b => {
+        b.classList.remove('active', 'text-sky-600', 'font-bold');
+        b.classList.add('text-slate-400', 'font-medium');
+      });
+
+      const activeNav = document.getElementById(`nav-btn-${tabId}`);
+      if (activeNav) {
+        activeNav.classList.add('active', 'text-sky-600', 'font-bold');
+        activeNav.classList.remove('text-slate-400', 'font-medium');
+      }
+
+      if (tabId === 'staff-tab') renderStaffMobileList();
+      if (tabId === 'committee-tab') renderCommitteesMobile();
+      if (tabId === 'floor-tab') renderFloorCards();
+    }
+
+    // ================= カウント集計 =================
+    function updateCountsAndBadges() {
+      const count2F = staffList.filter(s => s.floor === '2F').length;
+      const count3F = staffList.filter(s => s.floor === '3F').length;
+
+      const care2 = staffList.filter(s => s.floor === '2F' && s.qualification === '介護福祉士').length;
+      const nurse2 = staffList.filter(s => s.floor === '2F' && s.qualification.includes('看護')).length;
+
+      const care3 = staffList.filter(s => s.floor === '3F' && s.qualification === '介護福祉士').length;
+      const nurse3 = staffList.filter(s => s.floor === '3F' && s.qualification.includes('看護')).length;
+
+      document.getElementById('stat-floor2-badge').innerText = `${count2F}名`;
+      document.getElementById('stat-floor2-sub').innerText = `介福 ${care2} / 看護 ${nurse2}`;
+
+      document.getElementById('stat-floor3-badge').innerText = `${count3F}名`;
+      document.getElementById('stat-floor3-sub').innerText = `介福 ${care3} / 看護 ${nurse3}`;
+    }
+
+    // ================= スタッフ編集モーダル =================
+    function openStaffModal(staffId = null) {
+      const modal = document.getElementById('staff-modal');
+      const title = document.getElementById('staff-modal-title');
+      const form = document.getElementById('staff-form');
+      form.reset();
+
+      if (staffId) {
+        const staff = staffList.find(s => s.id === staffId);
+        if (!staff) return;
+        title.innerText = "スタッフ編集";
+        document.getElementById('modal-staff-id').value = staff.id;
+        document.getElementById('modal-staff-name').value = staff.name;
+        document.getElementById('modal-staff-role').value = staff.role || '';
+        document.getElementById('modal-staff-employment').value = staff.employment;
+        document.getElementById('modal-staff-qualification').value = staff.qualification;
+        document.getElementById('modal-staff-floor').value = staff.floor;
+        document.getElementById('modal-staff-notes').value = staff.notes || '';
+      } else {
+        title.innerText = "新規スタッフ登録";
+        document.getElementById('modal-staff-id').value = '';
+        document.getElementById('modal-staff-floor').value = 'unassigned';
+      }
+      modal.classList.remove('hidden');
+    }
+
+    function closeStaffModal() {
+      document.getElementById('staff-modal').classList.add('hidden');
+    }
+
+    function saveStaff(e) {
+      e.preventDefault();
+      const id = document.getElementById('modal-staff-id').value;
+      const name = document.getElementById('modal-staff-name').value.trim();
+      const role = document.getElementById('modal-staff-role').value.trim();
+      const qualification = document.getElementById('modal-staff-qualification').value;
+      const employment = document.getElementById('modal-staff-employment').value;
+      const floor = document.getElementById('modal-staff-floor').value;
+      const notes = document.getElementById('modal-staff-notes').value.trim();
+
+      if (!name) return;
+
+      if (id) {
+        const s = staffList.find(item => item.id === id);
+        if (s) {
+          s.name = name;
+          s.role = role;
+          s.qualification = qualification;
+          s.employment = employment;
+          s.floor = floor;
+          s.notes = notes;
+        }
+      } else {
+        staffList.push({
+          id: 'st-' + Date.now(),
+          name,
+          role,
+          qualification,
+          employment,
+          floor,
+          notes
+        });
+      }
+
+      saveLocalState();
+      refreshAllUI();
+      closeStaffModal();
+      showToast(`${name} さんの情報を更新しました`);
+    }
+
+    function deleteStaff(id) {
+      const s = staffList.find(item => item.id === id);
+      if (!s) return;
+      staffList = staffList.filter(item => item.id !== id);
+      committees.forEach(c => {
+        c.members = c.members.filter(mId => mId !== id);
+        if (c.leaderId === id) c.leaderId = '';
+      });
+      saveLocalState();
+      refreshAllUI();
+      showToast(`${s.name} さんを削除しました`);
+    }
+
+    // ================= 委員会編成モーダル =================
+    function openCommitteeAssignModal(committeeId) {
+      const com = committees.find(c => c.id === committeeId);
+      if (!com) return;
+
+      document.getElementById('assign-committee-id').value = com.id;
+      document.getElementById('committee-assign-title').innerText = `${com.name} 編成`;
+
+      const leaderSel = document.getElementById('assign-leader-select');
+      leaderSel.innerHTML = '<option value="">（委員長を選択）</option>';
+      staffList.forEach(s => {
+        const sel = s.id === com.leaderId ? 'selected' : '';
+        leaderSel.innerHTML += `<option value="${s.id}" ${sel}>${s.name} (${s.qualification})</option>`;
+      });
+
+      const checkList = document.getElementById('assign-members-checklist');
+      checkList.innerHTML = '';
+      staffList.forEach(s => {
+        const isChecked = com.members.includes(s.id);
+        const item = document.createElement('label');
+        item.className = "flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200 active:bg-sky-50";
+        item.innerHTML = `
+          <div class="flex items-center gap-2">
+            <input type="checkbox" value="${s.id}" class="committee-check rounded text-sky-600 w-4 h-4" ${isChecked ? 'checked' : ''}>
+            <span class="text-xs font-bold text-slate-800">${s.name}</span>
+          </div>
+          <span class="text-[10px] text-slate-400">${s.qualification} / ${s.floor === 'unassigned' ? '未配' : s.floor}</span>
+        `;
+        checkList.appendChild(item);
+      });
+
+      document.getElementById('committee-assign-modal').classList.remove('hidden');
+    }
+
+    function closeCommitteeAssignModal() {
+      document.getElementById('committee-assign-modal').classList.add('hidden');
+    }
+
+    function saveCommitteeAssignment() {
+      const cid = document.getElementById('assign-committee-id').value;
+      const com = committees.find(c => c.id === cid);
+      if (!com) return;
+
+      const leaderId = document.getElementById('assign-leader-select').value;
+      const checked = Array.from(document.querySelectorAll('.committee-check:checked')).map(cb => cb.value);
+
+      if (leaderId && !checked.includes(leaderId)) {
+        checked.push(leaderId);
+      }
+
+      com.leaderId = leaderId;
+      com.members = checked;
+
+      saveLocalState();
+      refreshAllUI();
+      closeCommitteeAssignModal();
+      showToast(`${com.name} の編成を保存しました`);
+    }
+
+    // ================= 委員会 新規作成・名前/概要編集 =================
+    function openCommitteeModal(committeeId = null) {
+      const modal = document.getElementById('committee-modal');
+      const title = document.getElementById('committee-modal-title');
+      const deleteBtn = document.getElementById('btn-delete-committee');
+
+      if (committeeId) {
+        const com = committees.find(c => c.id === committeeId);
+        if (!com) return;
+        title.innerText = "委員会の編集";
+        document.getElementById('committee-modal-id').value = com.id;
+        document.getElementById('modal-committee-name').value = com.name;
+        document.getElementById('modal-committee-freq').value = com.frequency || '';
+        document.getElementById('modal-committee-desc').value = com.description || '';
+        deleteBtn.classList.remove('hidden');
+      } else {
+        title.innerText = "新規委員会の作成";
+        document.getElementById('committee-modal-id').value = '';
+        document.getElementById('modal-committee-name').value = '';
+        document.getElementById('modal-committee-freq').value = '';
+        document.getElementById('modal-committee-desc').value = '';
+        deleteBtn.classList.add('hidden');
+      }
+      modal.classList.remove('hidden');
+    }
+
+    function closeCommitteeModal() {
+      document.getElementById('committee-modal').classList.add('hidden');
+    }
+
+    function saveCommitteeInfo(e) {
+      e.preventDefault();
+      const id = document.getElementById('committee-modal-id').value;
+      const name = document.getElementById('modal-committee-name').value.trim();
+      const freq = document.getElementById('modal-committee-freq').value.trim();
+      const desc = document.getElementById('modal-committee-desc').value.trim();
+
+      if (!name) return;
+
+      if (id) {
+        // 既存委員会の名前・詳細を更新
+        const com = committees.find(c => c.id === id);
+        if (com) {
+          com.name = name;
+          com.frequency = freq;
+          com.description = desc;
+          showToast(`${name} の情報を更新しました`);
+        }
+      } else {
+        // 新規作成
+        committees.push({
+          id: 'com-' + Date.now(),
+          name,
+          leaderId: '',
+          frequency: freq,
+          description: desc,
+          members: []
+        });
+        showToast(`${name} を新規作成しました`);
+      }
+
+      saveLocalState();
+      refreshAllUI();
+      closeCommitteeModal();
+    }
+
+    function deleteCurrentCommittee() {
+      const id = document.getElementById('committee-modal-id').value;
+      const com = committees.find(c => c.id === id);
+      if (!com) return;
+
+      const deletedName = com.name;
+      committees = committees.filter(c => c.id !== id);
+      saveLocalState();
+      refreshAllUI();
+      closeCommitteeModal();
+      showToast(`${deletedName} を削除しました`);
+    }
+
+    // ================= 設定モーダル & トースト =================
+    function openSettingsModal() {
+      document.getElementById('settings-modal').classList.remove('hidden');
+    }
+    function closeSettingsModal() {
+      document.getElementById('settings-modal').classList.add('hidden');
+    }
+
+    let toastTimer = null;
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toast-msg').innerText = msg;
+      toast.classList.remove('opacity-0', 'translate-y-4');
+      toast.classList.add('opacity-100', 'translate-y-0');
+
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', 'translate-y-4');
+      }, 2200);
+    }
+
+    // アプリ起動
+    window.addEventListener('DOMContentLoaded', initApp);
+  </script>
+</body>
+</html>
