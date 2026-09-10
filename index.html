@@ -190,6 +190,38 @@
         </div>
       </div>
 
+      <!-- メモ・コメント ＆ 配置変更履歴セクション（フロア画面） -->
+      <div class="space-y-3 pt-1">
+        <!-- フロア配置メモ・検討事項 -->
+        <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-xs space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <i class="ph ph-chat-centered-text text-amber-500 text-sm"></i> フロア配置メモ・検討事項
+            </span>
+            <span id="memo-count-floor" class="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold">0件</span>
+          </div>
+          <div class="flex gap-1.5">
+            <input type="text" id="memo-input-floor" placeholder="理由や検討コメント...（例：来月は夜勤体制を見直す）" class="flex-1 px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-hidden focus:ring-2 focus:ring-sky-500">
+            <button type="button" onclick="addTabMemo('floor')" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold active:scale-95 transition shrink-0">追加</button>
+          </div>
+          <div id="memo-list-floor" class="space-y-1.5 max-h-40 overflow-y-auto"></div>
+        </div>
+
+        <!-- 配置変更履歴（タイムライン） -->
+        <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-xs space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <i class="ph ph-clock-counter-clockwise text-sky-600 text-sm"></i> 配置変更履歴（タイムライン）
+            </span>
+            <div class="flex items-center gap-2">
+              <span id="action-logs-count" class="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold">0件</span>
+              <button type="button" onclick="clearActionLogs()" class="text-[10px] text-slate-400 hover:text-rose-600 transition">履歴消去</button>
+            </div>
+          </div>
+          <div id="action-logs-list" class="space-y-1.5 max-h-48 overflow-y-auto"></div>
+        </div>
+      </div>
+
     </section>
 
     <!-- ================= TAB 2: 委員会配置 ================= -->
@@ -222,6 +254,21 @@
       <div id="committees-mobile-container" class="space-y-3">
         <!-- JS動的描画 -->
       </div>
+
+      <!-- 委員会メモ・検討事項 -->
+      <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-xs space-y-2 pt-1">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+            <i class="ph ph-chat-centered-text text-amber-500 text-sm"></i> 委員会・チーム配置メモ
+          </span>
+          <span id="memo-count-committee" class="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold">0件</span>
+        </div>
+        <div class="flex gap-1.5">
+          <input type="text" id="memo-input-committee" placeholder="委員会に関するメモ...（例：褥瘡予防の委員長を来期交代検討）" class="flex-1 px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-hidden focus:ring-2 focus:ring-sky-500">
+          <button type="button" onclick="addTabMemo('committee')" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold active:scale-95 transition shrink-0">追加</button>
+        </div>
+        <div id="memo-list-committee" class="space-y-1.5 max-h-40 overflow-y-auto"></div>
+      </div>
     </section>
 
     <!-- ================= TAB 3: スタッフ台帳 ================= -->
@@ -242,6 +289,21 @@
       <!-- スタッフ簡易一覧リスト -->
       <div id="staff-mobile-cards" class="space-y-2">
         <!-- JS動的描画 -->
+      </div>
+
+      <!-- スタッフ台帳・人事メモ -->
+      <div class="bg-white rounded-xl border border-slate-200 p-3 shadow-xs space-y-2 pt-1">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+            <i class="ph ph-chat-centered-text text-amber-500 text-sm"></i> スタッフ台帳・人事メモ・特記事項
+          </span>
+          <span id="memo-count-staff" class="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold">0件</span>
+        </div>
+        <div class="flex gap-1.5">
+          <input type="text" id="memo-input-staff" placeholder="職員に関するメモ...（例：実務者研修受講予定、送迎対応可など）" class="flex-1 px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-slate-50 focus:outline-hidden focus:ring-2 focus:ring-sky-500">
+          <button type="button" onclick="addTabMemo('staff')" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-bold active:scale-95 transition shrink-0">追加</button>
+        </div>
+        <div id="memo-list-staff" class="space-y-1.5 max-h-40 overflow-y-auto"></div>
       </div>
     </section>
 
@@ -501,10 +563,12 @@
     let staffList = [];
     let committees = [];
     let floorLeaders = { '2F': '', '3F': '' };
+    let tabMemos = { floor: [], committee: [], staff: [] };
+    let actionLogs = [];
     const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycby92SIBskl7Hgh-Y7gN6s03AkN05L_60fY3ucA_dxFMISZmAYpvxIhkOmbIKeTMkLJLPw/exec';
     let gasUrl = DEFAULT_GAS_URL;
     let autoSaveTimer = null; // 自動保存用デバウンスタイマー
-    const DATA_ROSTER_VERSION = 'kusunoki_v3';
+    const DATA_ROSTER_VERSION = 'kusunoki_v4';
 
     // ================= 初期化 ＆ データ保存 =================
     function initApp() {
@@ -518,6 +582,15 @@
       const localStaff = localStorage.getItem('carehome_staff_data');
       const localCom = localStorage.getItem('carehome_com_data');
       const localLeaders = localStorage.getItem('carehome_floor_leaders');
+      const localMemos = localStorage.getItem('carehome_tab_memos');
+      const localLogs = localStorage.getItem('carehome_action_logs');
+
+      if (localMemos) {
+        try { tabMemos = JSON.parse(localMemos); } catch(e) { tabMemos = { floor: [], committee: [], staff: [] }; }
+      }
+      if (localLogs) {
+        try { actionLogs = JSON.parse(localLogs); } catch(e) { actionLogs = []; }
+      }
 
       if (rosterVersion !== DATA_ROSTER_VERSION || !localStaff) {
         staffList = JSON.parse(JSON.stringify(KUSUNOKI_STAFF_DATA));
@@ -532,6 +605,8 @@
         localStorage.setItem('carehome_staff_data', JSON.stringify(staffList));
         localStorage.setItem('carehome_com_data', JSON.stringify(committees));
         localStorage.setItem('carehome_floor_leaders', JSON.stringify(floorLeaders));
+        localStorage.setItem('carehome_tab_memos', JSON.stringify(tabMemos));
+        localStorage.setItem('carehome_action_logs', JSON.stringify(actionLogs));
         localStorage.setItem('carehome_roster_version', DATA_ROSTER_VERSION);
       } else {
         try {
@@ -566,16 +641,20 @@
               staffList = res.staffList;
               committees = res.committees || committees;
               floorLeaders = res.floorLeaders || floorLeaders;
+              if (res.tabMemos) tabMemos = res.tabMemos;
+              if (res.actionLogs) actionLogs = res.actionLogs;
               localStorage.setItem('carehome_staff_data', JSON.stringify(staffList));
               localStorage.setItem('carehome_com_data', JSON.stringify(committees));
               localStorage.setItem('carehome_floor_leaders', JSON.stringify(floorLeaders));
+              localStorage.setItem('carehome_tab_memos', JSON.stringify(tabMemos));
+              localStorage.setItem('carehome_action_logs', JSON.stringify(actionLogs));
               refreshAllUI();
               showToast('スプレッドシートから最新データを取得しました');
             }
           })
           .fetchAllData();
       } else if (gasUrl) {
-        setSyncStatus('自動保存ON', 'emerald');
+        setSyncStatus('スプレッドシート連携ON', 'emerald');
       }
 
       refreshAllUI();
@@ -586,6 +665,8 @@
       localStorage.setItem('carehome_staff_data', JSON.stringify(staffList));
       localStorage.setItem('carehome_com_data', JSON.stringify(committees));
       localStorage.setItem('carehome_floor_leaders', JSON.stringify(floorLeaders));
+      localStorage.setItem('carehome_tab_memos', JSON.stringify(tabMemos));
+      localStorage.setItem('carehome_action_logs', JSON.stringify(actionLogs));
       updateCountsAndBadges();
 
       // 操作後、落ち着いたタイミングでクラウド/スプレッドシートへ自動保存
@@ -611,7 +692,142 @@
       renderFloorCards();
       renderCommitteesMobile();
       renderStaffMobileList();
+      renderAllMemosAndLogs();
       updateCountsAndBadges();
+    }
+
+    // ================= メモ・コメント ＆ 変更履歴ロジック =================
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/[&<>"']/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s]));
+    }
+
+    function logAction(type, text, reason = '') {
+      const now = new Date();
+      const timeStr = `${now.getMonth() + 1}/${now.getDate()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      actionLogs.unshift({
+        id: 'log-' + Date.now(),
+        time: timeStr,
+        type: type,
+        text: text,
+        reason: reason ? reason.trim() : ''
+      });
+      if (actionLogs.length > 50) actionLogs.pop();
+      saveLocalState();
+      renderActionLogs();
+    }
+
+    function addTabMemo(tabKey) {
+      const inputEl = document.getElementById(`memo-input-${tabKey}`);
+      if (!inputEl) return;
+      const content = inputEl.value.trim();
+      if (!content) return;
+
+      const now = new Date();
+      const timeStr = `${now.getMonth() + 1}/${now.getDate()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+      if (!tabMemos[tabKey]) tabMemos[tabKey] = [];
+      tabMemos[tabKey].unshift({
+        id: 'memo-' + Date.now(),
+        time: timeStr,
+        content: content
+      });
+
+      inputEl.value = '';
+      saveLocalState();
+      renderTabMemos(tabKey);
+      showToast('メモを追加しました');
+    }
+
+    function deleteTabMemo(tabKey, memoId) {
+      if (!tabMemos[tabKey]) return;
+      tabMemos[tabKey] = tabMemos[tabKey].filter(m => m.id !== memoId);
+      saveLocalState();
+      renderTabMemos(tabKey);
+      showToast('メモを削除しました');
+    }
+
+    function clearActionLogs() {
+      if (confirm('配置変更の履歴をクリアしますか？')) {
+        actionLogs = [];
+        saveLocalState();
+        renderActionLogs();
+        showToast('履歴をクリアしました');
+      }
+    }
+
+    function renderAllMemosAndLogs() {
+      renderTabMemos('floor');
+      renderTabMemos('committee');
+      renderTabMemos('staff');
+      renderActionLogs();
+    }
+
+    function renderTabMemos(tabKey) {
+      const container = document.getElementById(`memo-list-${tabKey}`);
+      const countBadge = document.getElementById(`memo-count-${tabKey}`);
+      if (!container) return;
+
+      const list = tabMemos[tabKey] || [];
+      if (countBadge) countBadge.innerText = `${list.length}件`;
+
+      if (list.length === 0) {
+        container.innerHTML = '<p class="text-[11px] text-slate-400 text-center py-2.5 bg-slate-50 rounded-lg">メモやコメントはまだありません</p>';
+        return;
+      }
+
+      container.innerHTML = list.map(m => `
+        <div class="bg-amber-50/70 border border-amber-200/80 rounded-lg p-2 flex items-start justify-between gap-2 text-xs">
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1.5 text-[10px] text-amber-800 font-bold mb-0.5">
+              <i class="ph ph-chat-circle-text"></i>
+              <span>${m.time}</span>
+            </div>
+            <p class="text-slate-800 break-words text-[11px] leading-relaxed whitespace-pre-wrap">${escapeHtml(m.content)}</p>
+          </div>
+          <button type="button" onclick="deleteTabMemo('${tabKey}', '${m.id}')" title="メモを削除" class="text-slate-400 hover:text-rose-600 p-0.5 shrink-0 transition">
+            <i class="ph ph-trash text-sm"></i>
+          </button>
+        </div>
+      `).join('');
+    }
+
+    function renderActionLogs() {
+      const container = document.getElementById('action-logs-list');
+      const countBadge = document.getElementById('action-logs-count');
+      if (!container) return;
+
+      if (countBadge) countBadge.innerText = `${actionLogs.length}件`;
+
+      if (actionLogs.length === 0) {
+        container.innerHTML = '<p class="text-[11px] text-slate-400 text-center py-2.5 bg-slate-50 rounded-lg">移動・配置変更の履歴はありません</p>';
+        return;
+      }
+
+      container.innerHTML = actionLogs.map(l => {
+        let icon = 'ph-arrows-left-right text-sky-600';
+        let bg = 'bg-slate-50 border-slate-200';
+        if (l.type === 'leader') {
+          icon = 'ph-crown text-amber-500';
+          bg = 'bg-amber-50/60 border-amber-200';
+        }
+
+        const reasonHtml = l.reason
+          ? `<div class="text-[10px] text-amber-800 bg-amber-100/70 px-1.5 py-0.5 rounded mt-1 inline-block">💬 理由: ${escapeHtml(l.reason)}</div>`
+          : '';
+
+        return `
+          <div class="${bg} border rounded-lg p-2 text-xs">
+            <div class="flex items-center justify-between text-[10px] text-slate-400 mb-0.5">
+              <span class="flex items-center gap-1 font-bold text-slate-600">
+                <i class="ph ${icon}"></i> ${l.time}
+              </span>
+            </div>
+            <div class="text-slate-800 font-medium text-[11px]">${escapeHtml(l.text)}</div>
+            ${reasonHtml}
+          </div>
+        `;
+      }).join('');
     }
 
     // ================= スマホ用 タッチドラッグ＆ドロップ =================
@@ -822,6 +1038,7 @@
       if (isCurrentLeader) {
         floorLeaders[floor] = '';
         staff.isFloorLeader = false;
+        logAction('leader', `${staff.name} の ${floor}リーダーを解除`);
         showToast(`${staff.name} さんのフロアリーダーを解除しました`);
       } else {
         // 同一フロアの既存リーダーを解除
@@ -833,6 +1050,7 @@
 
         // 1番上（そのフロアの最上部）へ自動移動
         moveStaffToFloorTop(staffId, floor);
+        logAction('leader', `👑 ${staff.name} を ${floor}リーダーに指名（1番上に配置）`);
         showToast(`👑 ${staff.name} さんを${floor}リーダーに指名しました（1番上に配置）`);
       }
 
@@ -918,7 +1136,7 @@
       renderFloorCards();
     }
 
-    function moveStaffToFloor(staffId, targetFloor) {
+    function moveStaffToFloor(staffId, targetFloor, reason = '') {
       const staff = staffList.find(s => s.id === staffId);
       if (!staff || staff.floor === targetFloor) return;
 
@@ -946,10 +1164,29 @@
         staffList.push(staff);
       }
 
+      const oldFloorName = oldFloor === 'unassigned' ? '未配属' : `${oldFloor}フロア`;
+      const newFloorName = targetFloor === 'unassigned' ? '未配属' : `${targetFloor}フロア`;
+
+      // 履歴ログを記録
+      const actionText = `${staff.name} を ${oldFloorName} → ${newFloorName} に移動`;
+      logAction('move', actionText, reason);
+
+      // もし理由が入力されていればフロアメモにも自動追加
+      if (reason && reason.trim()) {
+        if (!tabMemos.floor) tabMemos.floor = [];
+        const now = new Date();
+        const timeStr = `${now.getMonth() + 1}/${now.getDate()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        tabMemos.floor.unshift({
+          id: 'memo-' + Date.now(),
+          time: timeStr,
+          content: `【移動理由】${staff.name}（${oldFloorName}→${newFloorName}）: ${reason.trim()}`
+        });
+        renderTabMemos('floor');
+      }
+
       saveLocalState();
       renderFloorCards();
-      const floorName = targetFloor === 'unassigned' ? '未配属' : `${targetFloor}フロア`;
-      showToast(`${staff.name} を ${floorName} に移動しました`);
+      showToast(`${staff.name} を ${newFloorName} に移動しました`);
     }
 
     function moveStaffBetweenCommittees(staffId, fromComId, toComId) {
@@ -969,6 +1206,8 @@
         toCom.members.push(staffId);
         if (!toCom.leaderId) toCom.leaderId = staffId;
       }
+
+      logAction('committee', `${staff.name} を ${fromCom.name} → ${toCom.name} に移動`);
 
       saveLocalState();
       renderCommitteesMobile();
@@ -1046,14 +1285,15 @@
             </button>
           </div>
 
-          <!-- フロア移動ボタン（タップでポップアップから即移動可能） -->
-          <button type="button" onclick="event.stopPropagation(); openFloorQuickMove('${staff.id}')" title="配置切替" class="px-2 py-1.5 ${
+          <!-- フロア移動ボタン（他のフロアを選択して移動） -->
+          <button type="button" onclick="event.stopPropagation(); openFloorQuickMove('${staff.id}')" title="他のフロアを選択して移動" class="px-2 py-1.5 ${
             isLeader
               ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
               : 'bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200'
           } rounded-md text-[11px] font-bold flex items-center gap-1 active:scale-95 transition">
-            <i class="ph ph-arrows-left-right"></i>
+            <i class="ph ph-arrows-left-right text-xs"></i>
             <span>${staff.floor === 'unassigned' ? '未配' : staff.floor}</span>
+            <i class="ph-bold ph-caret-down text-[9px] opacity-70"></i>
           </button>
         </div>
       `;
@@ -1238,69 +1478,81 @@
       if (!staff) return;
 
       const isLeader = (staff.floor === '2F' || staff.floor === '3F') && floorLeaders[staff.floor] === staff.id;
+      const currentFloorName = staff.floor === 'unassigned' ? '未配属 / フリー' : `${staff.floor}フロア`;
 
-      document.getElementById('quick-move-title').innerText = `${staff.name} さんの配置切替`;
-      document.getElementById('quick-move-subtitle').innerText = `現在: ${staff.floor === 'unassigned' ? '未配属' : staff.floor + 'フロア'}${isLeader ? ' (👑フロアリーダー)' : ''}`;
+      document.getElementById('quick-move-title').innerText = `${staff.name} さんのフロア移動`;
+      document.getElementById('quick-move-subtitle').innerText = `現在: ${currentFloorName}${isLeader ? ' (👑フロアリーダー)' : ''}`;
 
       const optionsContainer = document.getElementById('quick-move-options');
-      const destinations = [
-        { key: '2F', name: '2階フロア', badge: 'bg-emerald-100 text-emerald-800' },
-        { key: '3F', name: '3階フロア', badge: 'bg-indigo-100 text-indigo-800' },
-        { key: 'unassigned', name: '未配属 / フリー・ケアマネ', badge: 'bg-slate-200 text-slate-700' }
+
+      // 移動先の選択肢（現在のフロア以外の「他のフロア」を優先表示！）
+      const allFloors = [
+        { key: '2F', name: '2階フロアへ移動', badge: 'bg-emerald-50 text-emerald-800 border-emerald-300', icon: 'ph ph-tree-evergreen text-emerald-600' },
+        { key: '3F', name: '3階フロアへ移動', badge: 'bg-indigo-50 text-indigo-800 border-indigo-300', icon: 'ph ph-buildings text-indigo-600' },
+        { key: 'unassigned', name: '未配属 / フリーへ移動', badge: 'bg-slate-50 text-slate-700 border-slate-300', icon: 'ph ph-user text-slate-500' }
       ];
 
-      let html = '<div class="space-y-1.5">';
-      html += '<p class="text-[11px] font-bold text-slate-600 mb-1">■ フロア移動</p>';
-      html += destinations.map(dest => {
-        const isCurrent = staff.floor === dest.key;
-        return `
-          <button type="button" onclick="moveStaffToFloor('${staff.id}', '${dest.key}'); closeQuickMoveModal();" class="w-full flex items-center justify-between p-2.5 rounded-xl border ${
-            isCurrent ? 'bg-sky-50 border-sky-300 ring-2 ring-sky-200 font-bold' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-          } transition active:scale-[0.98]">
-            <div class="flex items-center gap-2">
-              <span class="px-2 py-0.5 rounded text-xs font-bold ${dest.badge}">${dest.key === 'unassigned' ? '未' : dest.key}</span>
-              <span class="text-xs text-slate-800">${dest.name}</span>
-            </div>
-            ${isCurrent ? '<span class="text-xs text-sky-600 font-bold flex items-center gap-1"><i class="ph-bold ph-check"></i> 現在</span>' : '<i class="ph ph-arrow-right text-slate-400"></i>'}
-          </button>
-        `;
-      }).join('');
-      html += '</div>';
+      const otherFloors = allFloors.filter(f => f.key !== staff.floor);
 
-      // フロアリーダー設定（2Fまたは3Fに所属している場合）
-      if (staff.floor === '2F' || staff.floor === '3F') {
-        html += `
-          <div class="pt-2 border-t border-slate-100 mt-2 space-y-1.5">
-            <p class="text-[11px] font-bold text-slate-600 mb-1">■ フロアリーダー設定</p>
-            <button type="button" onclick="toggleFloorLeader('${staff.floor}', '${staff.id}'); closeQuickMoveModal();" class="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl border font-bold text-xs transition active:scale-[0.98] ${
-              isLeader ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100' : 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100'
-            }">
-              <i class="ph-fill ph-crown text-base ${isLeader ? 'text-rose-500' : 'text-amber-500'}"></i>
-              <span>${isLeader ? '👑 フロアリーダーを解除する' : `👑 ${staff.floor}リーダーに指名する（1番上に配置）`}</span>
-            </button>
+      let html = `
+        <div class="space-y-2">
+          <p class="text-[11px] font-bold text-slate-700 flex items-center justify-between">
+            <span>■ 移動先を選択（タップで即移動）</span>
+            <span class="text-[10px] text-slate-400 font-normal">現在: ${currentFloorName}</span>
+          </p>
+
+          <!-- 移動理由・コメント入力（任意・履歴とメモに自動記録） -->
+          <div class="bg-amber-50/70 border border-amber-200 rounded-lg p-2 space-y-1">
+            <label class="text-[10px] font-bold text-amber-900 flex items-center gap-1">
+              <i class="ph ph-note-pencil"></i> 移動理由・コメント（任意・履歴とメモに残せます）
+            </label>
+            <input type="text" id="quick-move-reason" placeholder="例：見守り強化、新人指導のため、相性調整など" class="w-full px-2.5 py-1.5 text-xs bg-white border border-amber-200 rounded-md focus:ring-2 focus:ring-amber-500 focus:outline-hidden">
           </div>
-        `;
-      }
 
-      // 並び順の一発移動（1番上へ / 1番下へ）
-      html += `
-        <div class="pt-2 border-t border-slate-100 mt-2">
-          <p class="text-[11px] font-bold text-slate-600 mb-1.5">■ 並び順の一発移動</p>
-          <div class="grid grid-cols-2 gap-2">
-            <button type="button" onclick="moveStaffToExtreme('${staff.id}', 'top'); closeQuickMoveModal();" class="flex items-center justify-center gap-1 p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold active:scale-95 transition">
-              <i class="ph-bold ph-arrow-fat-line-up text-sky-600"></i> 1番上へ
-            </button>
-            <button type="button" onclick="moveStaffToExtreme('${staff.id}', 'bottom'); closeQuickMoveModal();" class="flex items-center justify-center gap-1 p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold active:scale-95 transition">
-              <i class="ph-bold ph-arrow-fat-line-down text-sky-600"></i> 1番下へ
-            </button>
+          <!-- 他のフロア移動ボタン一覧 -->
+          <div class="space-y-1.5 pt-1">
+            ${otherFloors.map(dest => `
+              <button type="button" onclick="executeQuickMove('${staff.id}', '${dest.key}')" class="w-full flex items-center justify-between p-3 rounded-xl border-2 hover:border-sky-400 ${dest.badge} transition active:scale-[0.98] shadow-2xs font-bold text-xs">
+                <div class="flex items-center gap-2">
+                  <i class="${dest.icon} text-lg"></i>
+                  <span>${dest.name}</span>
+                </div>
+                <span class="text-[11px] px-2 py-0.5 bg-white/80 rounded border font-semibold flex items-center gap-1 text-slate-700">
+                  選択 <i class="ph ph-arrow-right"></i>
+                </span>
+              </button>
+            `).join('')}
           </div>
         </div>
       `;
 
-      // スタッフ編集ショートカット
+      // リーダー設定・並び順などのサブ操作
       html += `
-        <div class="pt-2 border-t border-slate-100 mt-2">
-          <button type="button" onclick="closeQuickMoveModal(); openStaffModal('${staff.id}');" class="w-full flex items-center justify-center gap-1 p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 text-xs font-medium transition">
+        <div class="pt-3 border-t border-slate-100 mt-3 space-y-2">
+          <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">その他の設定</p>
+      `;
+
+      if (staff.floor === '2F' || staff.floor === '3F') {
+        html += `
+          <button type="button" onclick="toggleFloorLeader('${staff.floor}', '${staff.id}'); closeQuickMoveModal();" class="w-full flex items-center justify-center gap-2 p-2 rounded-lg border font-bold text-xs transition active:scale-[0.98] ${
+            isLeader ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100' : 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100'
+          }">
+            <i class="ph-fill ph-crown text-base ${isLeader ? 'text-rose-500' : 'text-amber-500'}"></i>
+            <span>${isLeader ? '👑 フロアリーダーを解除する' : `👑 ${staff.floor}リーダーに指名（1番上に配置）`}</span>
+          </button>
+        `;
+      }
+
+      html += `
+          <div class="grid grid-cols-2 gap-1.5">
+            <button type="button" onclick="moveStaffToExtreme('${staff.id}', 'top'); closeQuickMoveModal();" class="flex items-center justify-center gap-1 p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold active:scale-95 transition">
+              <i class="ph-bold ph-arrow-fat-line-up text-sky-600"></i> 1番上へ
+            </button>
+            <button type="button" onclick="moveStaffToExtreme('${staff.id}', 'bottom'); closeQuickMoveModal();" class="flex items-center justify-center gap-1 p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold active:scale-95 transition">
+              <i class="ph-bold ph-arrow-fat-line-down text-sky-600"></i> 1番下へ
+            </button>
+          </div>
+          <button type="button" onclick="closeQuickMoveModal(); openStaffModal('${staff.id}');" class="w-full flex items-center justify-center gap-1 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 text-[11px] transition">
             <i class="ph ph-pencil-simple"></i> 台帳のスタッフ情報を編集
           </button>
         </div>
@@ -1308,6 +1560,13 @@
 
       optionsContainer.innerHTML = html;
       document.getElementById('quick-move-modal').classList.remove('hidden');
+    }
+
+    function executeQuickMove(staffId, targetFloor) {
+      const reasonInput = document.getElementById('quick-move-reason');
+      const reason = reasonInput ? reasonInput.value.trim() : '';
+      closeQuickMoveModal();
+      moveStaffToFloor(staffId, targetFloor, reason);
     }
 
     function openCommitteeQuickMove(staffId, currentCommitteeId) {
@@ -1363,6 +1622,8 @@
         com.leaderId = staffId;
       }
 
+      logAction('committee', `${staff.name} を ${com.name} に追加`);
+
       saveLocalState();
       renderCommitteesMobile();
       renderFloorCards(); // スタッフカード側の委員会バッジも連動更新
@@ -1380,6 +1641,8 @@
         com.leaderId = com.members[0] || '';
       }
 
+      logAction('committee', `${staff ? staff.name : 'スタッフ'} を ${com.name} から除外`);
+
       saveLocalState();
       renderCommitteesMobile();
       renderFloorCards();
@@ -1394,9 +1657,11 @@
 
       if (com.leaderId === staffId) {
         com.leaderId = '';
+        logAction('committee', `${staff.name} の ${com.name} 委員長を解除`);
         showToast(`${staff.name} さんの委員長を解除しました`);
       } else {
         com.leaderId = staffId;
+        logAction('committee', `👑 ${staff.name} を ${com.name} 委員長に指名`);
         showToast(`${staff.name} さんを委員長に指名しました`);
       }
 
@@ -1467,7 +1732,7 @@
         google.script.run
           .withSuccessHandler(() => {
             resetSaveBtn();
-            setSyncStatus('自動保存ON', 'emerald');
+            setSyncStatus('スプレッドシート連携ON', 'emerald');
             showToast('スプレッドシートに保存しました');
           })
           .withFailureHandler(err => {
@@ -1475,14 +1740,14 @@
             setSyncStatus('保存失敗', 'rose');
             showToast('保存に失敗しました: ' + err);
           })
-          .saveAllData({ staffList, committees, floorLeaders });
+          .saveAllData({ staffList, committees, floorLeaders, tabMemos, actionLogs });
         return;
       }
 
       // 3. Web App URL (fetch POST) がある場合
       if (gasUrl) {
         try {
-          const payload = JSON.stringify({ staffList, committees, floorLeaders });
+          const payload = JSON.stringify({ staffList, committees, floorLeaders, tabMemos, actionLogs });
           await fetch(gasUrl, {
             method: 'POST',
             mode: 'no-cors',
@@ -1526,6 +1791,8 @@
               staffList = res.staffList;
               committees = res.committees || [];
               if (res.floorLeaders) floorLeaders = res.floorLeaders;
+              if (res.tabMemos) tabMemos = res.tabMemos;
+              if (res.actionLogs) actionLogs = res.actionLogs;
               saveLocalState();
               refreshAllUI();
               closeSettingsModal();
@@ -1548,6 +1815,8 @@
           staffList = data.staffList;
           committees = data.committees || [];
           if (data.floorLeaders) floorLeaders = data.floorLeaders;
+          if (data.tabMemos) tabMemos = data.tabMemos;
+          if (data.actionLogs) actionLogs = data.actionLogs;
           saveLocalState();
           refreshAllUI();
           closeSettingsModal();
