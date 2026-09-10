@@ -163,7 +163,7 @@
       <div class="bg-sky-50/70 border border-sky-200/70 rounded-lg px-2.5 py-1.5 flex items-center justify-between text-[11px] text-sky-800">
         <div class="flex items-center gap-1.5">
           <i class="ph ph-hand-tap text-sm text-sky-600"></i>
-          <span>右端の<b>[フロア▼]</b>から即切替・名前タップで詳細移動・左端<b>⋮⋮</b>でドラッグ移動</span>
+          <span><b>右端 [フロア▼]</b> で即変更 ／ <b>左端 [⋮⋮]</b> 掴みでドロップ移動</span>
         </div>
       </div>
 
@@ -866,22 +866,20 @@
     }
 
     /**
-     * カードにタッチ＆PCドラッグイベントを登録
+     * カードの左端ハンドルにタッチ＆PCドラッグイベントを登録
+     * （ユーザー指示：ドロップできるのは左端のみ。カード本体や右側の配置セレクトはドラッグに一切反応させない）
      * @param {HTMLElement} cardEl 
      * @param {string} staffId 
      * @param {string|null} sourceCommitteeId (委員会からのドラッグ時)
      */
     function attachCardTouchEvents(cardEl, staffId, sourceCommitteeId = null) {
-      cardEl.classList.add('draggable-card');
+      const handleEl = cardEl.querySelector('.drag-handle');
+      if (!handleEl) return;
 
-      // デスクトップ用 HTML5 DnD (ハンドルのみ、またはカード全体)
-      cardEl.setAttribute('draggable', 'true');
-      cardEl.ondragstart = (e) => {
-        // ボタンや操作要素上のクリックドラッグは無効化
-        if (e.target.closest('button, select, input, a, .quick-move-btn, .no-drag')) {
-          e.preventDefault();
-          return false;
-        }
+      // デスクトップ用 HTML5 DnD: 左端のハンドル（⋮⋮）のみを draggable にする
+      handleEl.setAttribute('draggable', 'true');
+      handleEl.ondragstart = (e) => {
+        e.stopPropagation();
         e.dataTransfer.setData('text/plain', staffId);
         if (sourceCommitteeId) {
           e.dataTransfer.setData('sourceCommitteeId', sourceCommitteeId);
@@ -889,18 +887,15 @@
         document.body.classList.add('drag-in-progress');
         setTimeout(() => cardEl.classList.add('opacity-40'), 0);
       };
-      cardEl.ondragend = () => {
+      handleEl.ondragend = () => {
         document.body.classList.remove('drag-in-progress');
         cardEl.classList.remove('opacity-40');
       };
 
-      // スマホ用 タッチイベント（ハンドル即時ドラッグ ＆ 250ms長押し判定）
-      cardEl.addEventListener('touchstart', (e) => {
+      // スマホ用 タッチイベント: 左端のハンドル（⋮⋮）のタップ・ドラッグのみで発火
+      handleEl.addEventListener('touchstart', (e) => {
         if (e.touches.length !== 1) return;
-        // ボタン、入力欄、リンク、配置切替ボタンを直接タップした時は絶対にドラッグ開始しない
-        if (e.target.closest('button, select, input, a, .quick-move-btn, .no-drag')) {
-          return;
-        }
+        e.stopPropagation();
 
         const touch = e.touches[0];
         touchStartX = touch.clientX;
@@ -912,22 +907,9 @@
         };
         isDragging = false;
 
-        // ドラッグハンドル（⋮⋮）を直接触った場合は即座にドラッグ準備（待機時間なし）
-        const isDirectHandle = Boolean(e.target.closest('.drag-handle'));
-
-        if (isDirectHandle) {
-          startDragAction(touch.clientX, touch.clientY);
-        } else {
-          // カード本体をタップした場合は250ms長押しでドラッグ開始
-          // （通常のスクロールやタップでのフロア選択を邪魔しない）
-          if (longPressTimer) clearTimeout(longPressTimer);
-          longPressTimer = setTimeout(() => {
-            if (activeTouchCard && !isDragging) {
-              startDragAction(touch.clientX, touch.clientY);
-            }
-          }, 250);
-        }
-      }, { passive: true });
+        // 左端ハンドルが触られたら即座にドラッグ準備・開始
+        startDragAction(touch.clientX, touch.clientY);
+      }, { passive: false });
     }
 
     function startDragAction(x, y) {
