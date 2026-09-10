@@ -501,15 +501,17 @@
     let staffList = [];
     let committees = [];
     let floorLeaders = { '2F': '', '3F': '' };
-    let gasUrl = '';
+    const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycby92SIBskl7Hgh-Y7gN6s03AkN05L_60fY3ucA_dxFMISZmAYpvxIhkOmbIKeTMkLJLPw/exec';
+    let gasUrl = DEFAULT_GAS_URL;
     let autoSaveTimer = null; // 自動保存用デバウンスタイマー
     const DATA_ROSTER_VERSION = 'kusunoki_v3';
 
     // ================= 初期化 ＆ データ保存 =================
     function initApp() {
       // GAS URL
-      gasUrl = localStorage.getItem('carehome_gas_url') || '';
-      document.getElementById('gas-api-url').value = gasUrl;
+      gasUrl = localStorage.getItem('carehome_gas_url') || DEFAULT_GAS_URL;
+      const gasInput = document.getElementById('gas-api-url');
+      if (gasInput) gasInput.value = gasUrl;
 
       // くすの木の実データへ更新（以前のサンプルデータが残っている場合は自動切替）
       const rosterVersion = localStorage.getItem('carehome_roster_version');
@@ -1484,11 +1486,11 @@
           await fetch(gasUrl, {
             method: 'POST',
             mode: 'no-cors',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: payload
           });
           resetSaveBtn();
-          setSyncStatus('自動保存ON', 'emerald');
+          setSyncStatus('スプレッドシート連携ON', 'emerald');
           showToast('スプレッドシートに保存しました');
         } catch (err) {
           resetSaveBtn();
