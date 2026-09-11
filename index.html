@@ -645,6 +645,17 @@
         }
       }
 
+      // 固定スタッフID（carehome_locked_staff_ids）の復元
+      const localLockedIds = localStorage.getItem('carehome_locked_staff_ids');
+      if (localLockedIds) {
+        try {
+          const lockedSet = new Set(JSON.parse(localLockedIds));
+          staffList.forEach(s => {
+            if (lockedSet.has(s.id)) s.isLocked = true;
+          });
+        } catch(e) {}
+      }
+
       // staffList内の isFloorLeader と floorLeaders の同期担保
       ['2F', '3F'].forEach(f => {
         if (floorLeaders[f]) {
@@ -678,6 +689,8 @@
     }
 
     function saveLocalState(triggerSync = true) {
+      const lockedIds = staffList.filter(s => s.isLocked).map(s => s.id);
+      localStorage.setItem('carehome_locked_staff_ids', JSON.stringify(lockedIds));
       localStorage.setItem('carehome_staff_data', JSON.stringify(staffList));
       localStorage.setItem('carehome_com_data', JSON.stringify(committees));
       localStorage.setItem('carehome_floor_leaders', JSON.stringify(floorLeaders));
@@ -1909,6 +1922,18 @@
 
       // 1. ローカルストレージは既に反映済み
 
+      // クラウド保存用データ作成（固定スタッフは notes に [固定] を付与して透過的に永続化）
+      const exportStaffList = staffList.map(s => {
+        const copy = { ...s };
+        const cleanNotes = (copy.notes || '').replace(/\[固定\]/g, '').trim();
+        if (copy.isLocked) {
+          copy.notes = cleanNotes ? `${cleanNotes} [固定]` : '[固定]';
+        } else {
+          copy.notes = cleanNotes;
+        }
+        return copy;
+      });
+
       // 2. GAS実行 (google.script.run がある場合)
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         google.script.run
@@ -1923,14 +1948,14 @@
             setSyncStatus('保存失敗', 'rose');
             showToast('保存に失敗しました: ' + err);
           })
-          .saveAllData({ staffList, committees, floorLeaders, tabMemos, actionLogs });
+          .saveAllData({ staffList: exportStaffList, committees, floorLeaders, tabMemos, actionLogs });
         return;
       }
 
       // 3. Web App URL (fetch POST) がある場合
       if (gasUrl) {
         try {
-          const payload = JSON.stringify({ staffList, committees, floorLeaders, tabMemos, actionLogs });
+          const payload = JSON.stringify({ staffList: exportStaffList, committees, floorLeaders, tabMemos, actionLogs });
           await fetch(gasUrl, {
             method: 'POST',
             mode: 'no-cors',
@@ -1976,7 +2001,38 @@
     function applyLoadedData(data, source = 'Cloud') {
       if (!data || !data.staffList || data.staffList.length === 0) return;
 
-      staffList = data.staffList;
+      // ローカルの既存固定状態を収集（スプレッドシート側にキーがない場合の保護マージ用）
+      const localLockedMap = {};
+      try {
+        const savedIds = JSON.parse(localStorage.getItem('carehome_locked_staff_ids') || '[]');
+        if (Array.isArray(savedIds)) {
+          savedIds.forEach(id => { localLockedMap[id] = true; });
+        }
+      } catch(e) {}
+      staffList.forEach(s => {
+        if (s.isLocked) localLockedMap[s.id] = true;
+      });
+
+      // スプレッドシート側のデータを加工して反映
+      staffList = data.staffList.map(s => {
+        let locked = false;
+        // 1. スプレッドシート側の直接フラグ
+        if (s.isLocked === true || s.isLocked === 'true' || s.isLocked === 1) {
+          locked = true;
+        }
+        // 2. notes 内の [固定] タグの検出と除去
+        if (s.notes && typeof s.notes === 'string' && s.notes.includes('[固定]')) {
+          locked = true;
+          s.notes = s.notes.replace(/\[固定\]/g, '').trim();
+        }
+        // 3. ローカルマップからの復元マージ（シート側に情報が欠落していた場合の安全保護）
+        if (!locked && localLockedMap[s.id]) {
+          locked = true;
+        }
+        s.isLocked = locked;
+        return s;
+      });
+
       if (Array.isArray(data.committees) && data.committees.length > 0) {
         committees = data.committees;
       }
@@ -2170,7 +2226,7 @@
         document.getElementById('modal-staff-employment').value = staff.employment;
         document.getElementById('modal-staff-qualification').value = staff.qualification;
         document.getElementById('modal-staff-floor').value = staff.floor;
-        document.getElementById('modal-staff-notes').value = staff.notes || '';
+        document.getElementById('modal-staff-notes').value = (staff.notes || '').replace(/\[固定\]/g, '').trim();
       } else {
         title.innerText = "新規スタッフ登録";
         document.getElementById('modal-staff-id').value = '';
@@ -2191,7 +2247,7 @@
       const qualification = document.getElementById('modal-staff-qualification').value;
       const employment = document.getElementById('modal-staff-employment').value;
       const floor = document.getElementById('modal-staff-floor').value;
-      const notes = document.getElementById('modal-staff-notes').value.trim();
+      const notes = document.getElementById('modal-staff-notes').value.replace(/\[固定\]/g, '').trim();
 
       if (!name) return;
 
@@ -2213,7 +2269,8 @@
           qualification,
           employment,
           floor,
-          notes
+          notes,
+          isLocked: false
         });
       }
 
