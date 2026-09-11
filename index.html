@@ -108,8 +108,14 @@
         </div>
       </div>
 
-      <!-- 右側アクションボタン（保存・設定・追加） -->
+      <!-- 右側アクションボタン（読込・保存・追加・設定） -->
       <div class="flex items-center gap-1.5">
+        <!-- スプレッドシート読込（最新同期）ボタン -->
+        <button onclick="loadFromCloud()" id="btn-sync" title="スプレッドシートから最新データを読込" class="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 rounded-lg text-xs font-semibold border border-slate-200 transition">
+          <i class="ph ph-arrows-clockwise text-sm" id="btn-sync-icon"></i>
+          <span id="btn-sync-text">読込</span>
+        </button>
+
         <!-- スプレッドシート保存ボタン（手動即時保存も可能） -->
         <button onclick="saveToCloud()" id="btn-save" title="今すぐ保存" class="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-lg text-xs font-semibold shadow-xs transition">
           <i class="ph ph-cloud-check text-sm" id="btn-save-icon"></i>
@@ -117,7 +123,7 @@
         </button>
 
         <!-- スタッフ新規追加 -->
-        <button onclick="openStaffModal()" class="w-8 h-8 flex items-center justify-center bg-sky-600 hover:bg-sky-700 active:scale-95 text-white rounded-lg shadow-xs transition">
+        <button onclick="openStaffModal()" title="スタッフ新規登録" class="w-8 h-8 flex items-center justify-center bg-sky-600 hover:bg-sky-700 active:scale-95 text-white rounded-lg shadow-xs transition">
           <i class="ph ph-plus text-base font-bold"></i>
         </button>
 
@@ -653,34 +659,25 @@
 
       // Google Apps Scriptの埋め込み実行(google.script.run)が使える環境かチェック
       if (typeof google !== 'undefined' && google.script && google.script.run) {
-        setSyncStatus('GAS接続・自動保存ON', 'emerald');
+        setSyncStatus('GAS接続・照会中...', 'sky');
         google.script.run
           .withSuccessHandler(res => {
             if (res && res.staffList && res.staffList.length > 0) {
-              staffList = res.staffList;
-              committees = res.committees || committees;
-              floorLeaders = res.floorLeaders || floorLeaders;
-              if (res.tabMemos) tabMemos = res.tabMemos;
-              if (res.actionLogs) actionLogs = res.actionLogs;
-              localStorage.setItem('carehome_staff_data', JSON.stringify(staffList));
-              localStorage.setItem('carehome_com_data', JSON.stringify(committees));
-              localStorage.setItem('carehome_floor_leaders', JSON.stringify(floorLeaders));
-              localStorage.setItem('carehome_tab_memos', JSON.stringify(tabMemos));
-              localStorage.setItem('carehome_action_logs', JSON.stringify(actionLogs));
-              refreshAllUI();
+              applyLoadedData(res, 'GAS埋め込み');
               showToast('スプレッドシートから最新データを取得しました');
             }
           })
           .fetchAllData();
       } else if (gasUrl) {
-        setSyncStatus('スプレッドシート連携ON', 'emerald');
+        // スタンドアロン（ブラウザ/GitHub Pages）でも起動時に最新データを自動照会！
+        loadFromCloud(true);
       }
 
       refreshAllUI();
       setupTouchDnD();
     }
 
-    function saveLocalState() {
+    function saveLocalState(triggerSync = true) {
       localStorage.setItem('carehome_staff_data', JSON.stringify(staffList));
       localStorage.setItem('carehome_com_data', JSON.stringify(committees));
       localStorage.setItem('carehome_floor_leaders', JSON.stringify(floorLeaders));
@@ -688,8 +685,10 @@
       localStorage.setItem('carehome_action_logs', JSON.stringify(actionLogs));
       updateCountsAndBadges();
 
-      // 操作後、落ち着いたタイミングでクラウド/スプレッドシートへ自動保存
-      triggerAutoSave();
+      // 操作後、落ち着いたタイミングでクラウド/スプレッドシートへ自動保存（同期読込時は除外）
+      if (triggerSync) {
+        triggerAutoSave();
+      }
     }
 
     // 操作が一段落したタイミング（約2秒後）で自動同期
@@ -1809,7 +1808,8 @@
         google.script.run
           .withSuccessHandler(() => {
             resetSaveBtn();
-            setSyncStatus('スプレッドシート連携ON', 'emerald');
+            const timeStr = getNowTimeString();
+            setSyncStatus(`同期済 (${timeStr})`, 'emerald');
             showToast('スプレッドシートに保存しました');
           })
           .withFailureHandler(err => {
@@ -1832,7 +1832,8 @@
             body: payload
           });
           resetSaveBtn();
-          setSyncStatus('スプレッドシート連携ON', 'emerald');
+          const timeStr = getNowTimeString();
+          setSyncStatus(`同期済 (${timeStr})`, 'emerald');
           showToast('スプレッドシートに保存しました');
         } catch (err) {
           resetSaveBtn();
@@ -1849,6 +1850,11 @@
       }
     }
 
+    function getNowTimeString() {
+      const now = new Date();
+      return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    }
+
     function resetSaveBtn() {
       const saveBtn = document.getElementById('btn-save');
       const saveIcon = document.getElementById('btn-save-icon');
@@ -1860,47 +1866,102 @@
       saveText.innerText = '保存';
     }
 
-    async function loadFromCloud() {
+    // スプレッドシート（またはGAS）から届いたデータを反映する安全な共通関数
+    function applyLoadedData(data, source = 'Cloud') {
+      if (!data || !data.staffList || data.staffList.length === 0) return;
+
+      staffList = data.staffList;
+      if (Array.isArray(data.committees) && data.committees.length > 0) {
+        committees = data.committees;
+      }
+      if (data.floorLeaders && typeof data.floorLeaders === 'object') {
+        floorLeaders = data.floorLeaders;
+      } else if (!floorLeaders) {
+        floorLeaders = { '2F': '', '3F': '' };
+      }
+      if (data.tabMemos && typeof data.tabMemos === 'object') {
+        tabMemos = data.tabMemos;
+      }
+      if (Array.isArray(data.actionLogs)) {
+        actionLogs = data.actionLogs;
+      }
+
+      // リーダー整合性チェック
+      ['2F', '3F'].forEach(f => {
+        if (floorLeaders[f]) {
+          const leader = staffList.find(s => s.id === floorLeaders[f]);
+          if (leader && leader.floor === f) {
+            leader.isFloorLeader = true;
+          } else {
+            floorLeaders[f] = '';
+          }
+        }
+      });
+      staffList.forEach(s => {
+        if (s.isFloorLeader && (s.floor === '2F' || s.floor === '3F')) {
+          floorLeaders[s.floor] = s.id;
+        }
+      });
+
+      // 自動保存ループを防止するため triggerSync = false で保存
+      saveLocalState(false);
+      refreshAllUI();
+
+      const timeStr = getNowTimeString();
+      setSyncStatus(`同期済 (${timeStr})`, 'emerald');
+    }
+
+    async function loadFromCloud(isSilent = false) {
+      const syncBtn = document.getElementById('btn-sync');
+      const syncIcon = document.getElementById('btn-sync-icon');
+      if (syncIcon) syncIcon.className = 'ph ph-spinner-gap animate-spin text-sm';
+      if (!isSilent) setSyncStatus('読込中...', 'sky');
+
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         google.script.run
           .withSuccessHandler(res => {
-            if (res && res.staffList) {
-              staffList = res.staffList;
-              committees = res.committees || [];
-              if (res.floorLeaders) floorLeaders = res.floorLeaders;
-              if (res.tabMemos) tabMemos = res.tabMemos;
-              if (res.actionLogs) actionLogs = res.actionLogs;
-              saveLocalState();
-              refreshAllUI();
+            if (syncIcon) syncIcon.className = 'ph ph-arrows-clockwise text-sm';
+            if (res && res.staffList && res.staffList.length > 0) {
+              applyLoadedData(res, 'GAS埋め込み');
               closeSettingsModal();
-              showToast('スプレッドシートから読み込みました');
+              if (!isSilent) showToast('スプレッドシートから読み込みました');
             }
+          })
+          .withFailureHandler(err => {
+            if (syncIcon) syncIcon.className = 'ph ph-arrows-clockwise text-sm';
+            setSyncStatus('読込失敗', 'rose');
+            if (!isSilent) showToast('読み込み失敗: ' + err);
           })
           .fetchAllData();
         return;
       }
 
       if (!gasUrl) {
-        showToast('GASのWeb App URLを設定してください');
+        if (syncIcon) syncIcon.className = 'ph ph-arrows-clockwise text-sm';
+        if (!isSilent) showToast('GASのWeb App URLを設定してください');
         return;
       }
 
       try {
+        setSyncStatus('シート照会中...', 'sky');
         const res = await fetch(`${gasUrl}?action=getData`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        if (data && data.staffList) {
-          staffList = data.staffList;
-          committees = data.committees || [];
-          if (data.floorLeaders) floorLeaders = data.floorLeaders;
-          if (data.tabMemos) tabMemos = data.tabMemos;
-          if (data.actionLogs) actionLogs = data.actionLogs;
-          saveLocalState();
-          refreshAllUI();
+        if (syncIcon) syncIcon.className = 'ph ph-arrows-clockwise text-sm';
+
+        if (data && data.staffList && data.staffList.length > 0) {
+          applyLoadedData(data, 'Web App');
           closeSettingsModal();
-          showToast('スプレッドシートから読み込みました');
+          if (!isSilent) showToast(`スプレッドシートから最新 ${data.staffList.length}名を読み込みました`);
+        } else {
+          setSyncStatus('データ不正', 'rose');
+          if (!isSilent) showToast('スプレッドシートのデータ形式が不正です');
         }
       } catch (err) {
-        showToast('読み込み失敗: ' + err.message);
+        console.error('loadFromCloud error:', err);
+        if (syncIcon) syncIcon.className = 'ph ph-arrows-clockwise text-sm';
+        setSyncStatus('通信失敗（端末データ）', 'amber');
+        if (!isSilent) showToast('読み込み失敗: ' + err.message);
       }
     }
 
