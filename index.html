@@ -1134,10 +1134,37 @@
       }
     }
 
+    // ================= スタッフ配置確定（固定/ロック）ロジック =================
+    function toggleStaffLock(staffId) {
+      const staff = staffList.find(s => s.id === staffId);
+      if (!staff) return;
+
+      staff.isLocked = !staff.isLocked;
+      const isNowLocked = staff.isLocked;
+      const floorName = staff.floor === 'unassigned' ? '未配属' : `${staff.floor}フロア`;
+
+      const actionText = isNowLocked 
+        ? `${staff.name} を ${floorName} で【確定・固定】` 
+        : `${staff.name} の【確定（固定）を解除】`;
+      logAction('lock', actionText);
+
+      saveLocalState();
+      renderFloorCards();
+      showToast(isNowLocked ? `🔒 ${staff.name} さんを確定（固定）しました` : `🔓 ${staff.name} さんの確定を解除しました`);
+    }
+
+    function showLockedStaffAlert(staffName) {
+      showToast(`🔒 ${staffName} さんは確定（固定中）です。変更するには「固定中」を押して解除してください`);
+    }
+
     // 同一フロア内での上下並び替え（▲・▼ボタン）
     function moveStaffOrder(staffId, direction) {
       const staff = staffList.find(s => s.id === staffId);
       if (!staff) return;
+      if (staff.isLocked) {
+        showLockedStaffAlert(staff.name);
+        return;
+      }
 
       const sameFloorStaff = staffList.filter(s => s.floor === staff.floor);
       const curPos = sameFloorStaff.findIndex(s => s.id === staffId);
@@ -1164,6 +1191,10 @@
     function moveStaffToExtreme(staffId, position) {
       const staff = staffList.find(s => s.id === staffId);
       if (!staff) return;
+      if (staff.isLocked) {
+        showLockedStaffAlert(staff.name);
+        return;
+      }
 
       const curIdx = staffList.findIndex(s => s.id === staffId);
       if (curIdx > -1) staffList.splice(curIdx, 1);
@@ -1199,6 +1230,10 @@
     function moveStaffToFloor(staffId, targetFloor, reason = '') {
       const staff = staffList.find(s => s.id === staffId);
       if (!staff || staff.floor === targetFloor) return;
+      if (staff.isLocked) {
+        showLockedStaffAlert(staff.name);
+        return;
+      }
 
       const oldFloor = staff.floor;
       if (floorLeaders[oldFloor] === staffId) {
@@ -1292,12 +1327,18 @@
       card.id = `card-${staff.id}`;
 
       const isLeader = (staff.floor === '2F' || staff.floor === '3F') && floorLeaders[staff.floor] === staff.id;
+      const isLocked = !!staff.isLocked;
 
-      card.className = `draggable-card p-2.5 rounded-lg border shadow-2xs flex items-center justify-between active:scale-[0.99] transition ${
-        isLeader
-          ? 'bg-amber-50/90 border-amber-300 ring-2 ring-amber-200'
-          : 'bg-white border-slate-200 hover:border-slate-300'
-      }`;
+      let cardStyle = 'bg-white border-slate-200 hover:border-slate-300';
+      if (isLeader) {
+        cardStyle = isLocked 
+          ? 'bg-amber-50/95 border-amber-400 ring-2 ring-emerald-500 shadow-xs' 
+          : 'bg-amber-50/90 border-amber-300 ring-2 ring-amber-200';
+      } else if (isLocked) {
+        cardStyle = 'bg-emerald-50/40 border-emerald-300 ring-1 ring-emerald-300 shadow-xs';
+      }
+
+      card.className = `draggable-card p-2.5 rounded-lg border shadow-2xs flex items-center justify-between active:scale-[0.99] transition ${cardStyle}`;
 
       // 委員名タグ
       const staffComms = committees
@@ -1317,56 +1358,83 @@
            </button>`
         : '';
 
+      // 左端: ドラッグ専用ハンドル または 確定ロックアイコン
+      const leftHandle = isLocked
+        ? `<div class="p-1.5 -ml-1 mr-0.5 text-emerald-600 cursor-not-allowed select-none shrink-0" title="確定済み（固定中）のためドラッグ移動不可">
+             <i class="ph-fill ph-lock-key text-base"></i>
+           </div>`
+        : `<div class="drag-handle p-1.5 -ml-1 mr-0.5 text-slate-400 hover:text-sky-600 active:text-sky-700 select-none shrink-0" title="ドラッグして移動">
+             <i class="ph ph-dots-six-vertical text-lg"></i>
+           </div>`;
+
+      // 確定（固定）ボタントグル
+      const lockButton = `
+        <button type="button" onclick="event.stopPropagation(); toggleStaffLock('${staff.id}')" title="${isLocked ? 'クリックして確定を解除' : 'この配置で確定（固定）する'}" class="flex items-center gap-1 px-2 py-1.5 rounded-lg border text-xs font-semibold shadow-2xs active:scale-95 transition ${
+          isLocked
+            ? 'bg-emerald-600 hover:bg-emerald-700 border-emerald-600 text-white font-bold'
+            : 'bg-white hover:bg-emerald-50 border-slate-200 hover:border-emerald-300 text-slate-600 hover:text-emerald-700'
+        }">
+          <i class="${isLocked ? 'ph-fill ph-lock-key' : 'ph ph-lock-open'} text-xs"></i>
+          <span class="whitespace-nowrap">${isLocked ? '固定中' : '確定'}</span>
+        </button>
+      `;
+
       card.innerHTML = `
-        <!-- 左端: ドラッグ専用ハンドル（掴むと即座にドラッグ） -->
-        <div class="drag-handle p-1.5 -ml-1 mr-0.5 text-slate-400 hover:text-sky-600 active:text-sky-700 select-none shrink-0" title="ドラッグして移動">
-          <i class="ph ph-dots-six-vertical text-lg"></i>
-        </div>
+        <!-- 左端: ドラッグハンドル または 確定アイコン -->
+        ${leftHandle}
 
         <!-- 王冠ボタン（リーダー指名・解除） -->
         ${crownButton}
 
         <!-- カード中央: スタッフ名・詳細（タップでフロア選択ポップアップ） -->
-        <div class="flex-1 min-w-0 px-1 py-1 cursor-pointer select-none" onclick="openFloorQuickMove('${staff.id}')" title="タップしてフロアを移動">
+        <div class="flex-1 min-w-0 px-1 py-1 cursor-pointer select-none" onclick="${isLocked ? `showLockedStaffAlert('${escapeHtml(staff.name)}')` : `openFloorQuickMove('${staff.id}')`}" title="${isLocked ? '確定済み（固定中）' : 'タップしてフロアを移動'}">
           <div class="flex items-center gap-1.5 flex-wrap">
-            <span class="font-bold text-xs ${isLeader ? 'text-slate-900 font-extrabold' : 'text-slate-800'}">${staff.name}</span>
+            <span class="font-bold text-xs ${isLeader ? 'text-slate-900 font-extrabold' : 'text-slate-800'}">${escapeHtml(staff.name)}</span>
             ${isLeader ? '<span class="text-[9px] px-1.5 py-0.2 bg-amber-500 text-white font-bold rounded shadow-2xs">👑リーダー</span>' : ''}
-            <span class="text-[9px] px-1.5 py-0.2 rounded border font-medium ${getQualColor(staff.qualification)}">${staff.qualification}</span>
-            <span class="text-[10px] text-slate-400">${staff.employment}</span>
+            ${isLocked ? '<span class="text-[9px] px-1.5 py-0.2 bg-emerald-600 text-white font-bold rounded shadow-2xs flex items-center gap-0.5 shrink-0"><i class="ph-fill ph-lock-key text-[10px]"></i>固定</span>' : ''}
+            <span class="text-[9px] px-1.5 py-0.2 rounded border font-medium ${getQualColor(staff.qualification)}">${escapeHtml(staff.qualification)}</span>
+            <span class="text-[10px] text-slate-400">${escapeHtml(staff.employment)}</span>
           </div>
-          <div class="text-[10px] text-slate-500 mt-0.5">${staff.role || '介護職'} ${staff.notes ? '• ' + staff.notes : ''}</div>
+          <div class="text-[10px] text-slate-500 mt-0.5">${escapeHtml(staff.role || '介護職')} ${staff.notes ? '• ' + escapeHtml(staff.notes) : ''}</div>
           ${commBadge}
         </div>
 
-        <!-- 右端: 操作エリア（並び替えボタン ＆ フロア切替ボタン） -->
+        <!-- 右端: 操作エリア（並び替えボタン ＆ 確定ボタン ＆ フロア切替ボタン） -->
         <div class="flex items-center gap-1 shrink-0 ml-1 no-drag">
           <!-- 上下並び替えボタン -->
           <div class="flex flex-col gap-0.5">
-            <button type="button" onclick="event.stopPropagation(); moveStaffOrder('${staff.id}', 'up')" title="上へ移動" class="w-5 h-4 flex items-center justify-center bg-slate-100 hover:bg-sky-100 text-slate-500 hover:text-sky-600 rounded text-[10px] active:scale-90 transition">
+            <button type="button" ${isLocked ? 'disabled' : ''} onclick="event.stopPropagation(); moveStaffOrder('${staff.id}', 'up')" title="${isLocked ? '確定中のため移動不可' : '上へ移動'}" class="w-5 h-4 flex items-center justify-center ${isLocked ? 'bg-slate-50 text-slate-300 cursor-not-allowed' : 'bg-slate-100 hover:bg-sky-100 text-slate-500 hover:text-sky-600 active:scale-90'} rounded text-[10px] transition">
               <i class="ph-bold ph-caret-up"></i>
             </button>
-            <button type="button" onclick="event.stopPropagation(); moveStaffOrder('${staff.id}', 'down')" title="下へ移動" class="w-5 h-4 flex items-center justify-center bg-slate-100 hover:bg-sky-100 text-slate-500 hover:text-sky-600 rounded text-[10px] active:scale-90 transition">
+            <button type="button" ${isLocked ? 'disabled' : ''} onclick="event.stopPropagation(); moveStaffOrder('${staff.id}', 'down')" title="${isLocked ? '確定中のため移動不可' : '下へ移動'}" class="w-5 h-4 flex items-center justify-center ${isLocked ? 'bg-slate-50 text-slate-300 cursor-not-allowed' : 'bg-slate-100 hover:bg-sky-100 text-slate-500 hover:text-sky-600 active:scale-90'} rounded text-[10px] transition">
               <i class="ph-bold ph-caret-down"></i>
             </button>
           </div>
 
-          <!-- フロア直接選択プルダウン（OS標準セレクトで100%確実に即時移動可能） -->
+          <!-- 確定（固定）ボタン -->
+          ${lockButton}
+
+          <!-- フロア直接選択プルダウン -->
           <div class="relative flex items-center">
-            <select onchange="event.stopPropagation(); executeFloorSelectChange('${staff.id}', this.value)" onclick="event.stopPropagation()" class="appearance-none pl-2 pr-5 py-1.5 ${
-              isLeader
-                ? 'bg-amber-100 text-amber-900 border-amber-300 font-bold'
-                : 'bg-sky-50 text-sky-700 border-sky-200 font-bold'
-            } border rounded-lg text-xs cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-sky-500 shadow-2xs active:scale-95 transition">
+            <select ${isLocked ? 'disabled' : ''} onchange="event.stopPropagation(); executeFloorSelectChange('${staff.id}', this.value)" onclick="event.stopPropagation()" class="appearance-none pl-2 pr-5 py-1.5 ${
+              isLocked
+                ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed font-medium'
+                : isLeader
+                  ? 'bg-amber-100 text-amber-900 border-amber-300 font-bold cursor-pointer'
+                  : 'bg-sky-50 text-sky-700 border-sky-200 font-bold cursor-pointer'
+            } border rounded-lg text-xs focus:outline-hidden focus:ring-2 focus:ring-sky-500 shadow-2xs active:scale-95 transition">
               <option value="2F" ${staff.floor === '2F' ? 'selected' : ''}>2F</option>
               <option value="3F" ${staff.floor === '3F' ? 'selected' : ''}>3F</option>
               <option value="unassigned" ${staff.floor === 'unassigned' ? 'selected' : ''}>未配</option>
             </select>
-            <i class="ph-bold ph-caret-down text-[10px] text-slate-500 pointer-events-none absolute right-1.5"></i>
+            <i class="ph-bold ph-caret-down text-[10px] ${isLocked ? 'text-slate-300' : 'text-slate-500'} pointer-events-none absolute right-1.5"></i>
           </div>
         </div>
       `;
 
-      attachCardTouchEvents(card, staff.id, null);
+      if (!isLocked) {
+        attachCardTouchEvents(card, staff.id, null);
+      }
       return card;
     }
 
@@ -1410,10 +1478,11 @@
 
       if (count2 === 0) drop2F.innerHTML = '<p class="text-[11px] text-slate-400 text-center py-2.5">スタッフをここにドロップ</p>';
       if (count3 === 0) drop3F.innerHTML = '<p class="text-[11px] text-slate-400 text-center py-2.5">スタッフをここにドロップ</p>';
-      if (countUn === 0) dropUn.innerHTML = '<p class="text-[11px] text-slate-400 text-center py-2.5">未配属のスタッフはいません</p>';
+      const locked2 = staffList.filter(s => s.floor === '2F' && s.isLocked).length;
+      const locked3 = staffList.filter(s => s.floor === '3F' && s.isLocked).length;
 
-      document.getElementById('count-drop-floor2').innerText = `${count2}名`;
-      document.getElementById('count-drop-floor3').innerText = `${count3}名`;
+      document.getElementById('count-drop-floor2').innerText = `${count2}名${locked2 > 0 ? ` (固定${locked2})` : ''}`;
+      document.getElementById('count-drop-floor3').innerText = `${count3}名${locked3 > 0 ? ` (固定${locked3})` : ''}`;
       document.getElementById('count-drop-unassigned').innerText = `${countUn}名`;
     }
 
@@ -1564,42 +1633,69 @@
 
       const otherFloors = allFloors.filter(f => f.key !== staff.floor);
 
-      let html = `
-        <div class="space-y-2">
-          <p class="text-[11px] font-bold text-slate-700 flex items-center justify-between">
-            <span>■ 移動先を選択（タップで即移動）</span>
-            <span class="text-[10px] text-slate-400 font-normal">現在: ${currentFloorName}</span>
-          </p>
+      let html = '';
 
-          <!-- 移動理由・コメント入力（任意・履歴とメモに自動記録） -->
-          <div class="bg-amber-50/70 border border-amber-200 rounded-lg p-2 space-y-1">
-            <label class="text-[10px] font-bold text-amber-900 flex items-center gap-1">
-              <i class="ph ph-note-pencil"></i> 移動理由・コメント（任意・履歴とメモに残せます）
-            </label>
-            <input type="text" id="quick-move-reason" placeholder="例：見守り強化、新人指導のため、相性調整など" class="w-full px-2.5 py-1.5 text-xs bg-white border border-amber-200 rounded-md focus:ring-2 focus:ring-amber-500 focus:outline-hidden">
+      if (staff.isLocked) {
+        html += `
+          <div class="bg-emerald-50 border border-emerald-300 rounded-xl p-3 text-center space-y-2 mb-3">
+            <div class="text-xs font-bold text-emerald-800 flex items-center justify-center gap-1.5">
+              <i class="ph-fill ph-lock-key text-base text-emerald-600"></i>
+              <span>現在 ${currentFloorName} で【確定（固定中）】です</span>
+            </div>
+            <p class="text-[11px] text-emerald-700">フロアを移動するには、下のボタンで一度確定を解除してください。</p>
+            <button type="button" onclick="toggleStaffLock('${staff.id}'); closeQuickMoveModal();" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold rounded-lg text-xs shadow-2xs transition">
+              <i class="ph ph-lock-open"></i> 確定を解除して移動可能にする
+            </button>
           </div>
+        `;
+      } else {
+        html += `
+          <div class="space-y-2">
+            <p class="text-[11px] font-bold text-slate-700 flex items-center justify-between">
+              <span>■ 移動先を選択（タップで即移動）</span>
+              <span class="text-[10px] text-slate-400 font-normal">現在: ${currentFloorName}</span>
+            </p>
 
-          <!-- 他のフロア移動ボタン一覧 -->
-          <div class="space-y-1.5 pt-1">
-            ${otherFloors.map(dest => `
-              <button type="button" onclick="executeQuickMove('${staff.id}', '${dest.key}')" class="w-full flex items-center justify-between p-3 rounded-xl border-2 hover:border-sky-400 ${dest.badge} transition active:scale-[0.98] shadow-2xs font-bold text-xs">
-                <div class="flex items-center gap-2">
-                  <i class="${dest.icon} text-lg"></i>
-                  <span>${dest.name}</span>
-                </div>
-                <span class="text-[11px] px-2 py-0.5 bg-white/80 rounded border font-semibold flex items-center gap-1 text-slate-700">
-                  選択 <i class="ph ph-arrow-right"></i>
-                </span>
-              </button>
-            `).join('')}
+            <!-- 移動理由・コメント入力（任意・履歴とメモに自動記録） -->
+            <div class="bg-amber-50/70 border border-amber-200 rounded-lg p-2 space-y-1">
+              <label class="text-[10px] font-bold text-amber-900 flex items-center gap-1">
+                <i class="ph ph-note-pencil"></i> 移動理由・コメント（任意・履歴とメモに残せます）
+              </label>
+              <input type="text" id="quick-move-reason" placeholder="例：見守り強化、新人指導のため、相性調整など" class="w-full px-2.5 py-1.5 text-xs bg-white border border-amber-200 rounded-md focus:ring-2 focus:ring-amber-500 focus:outline-hidden">
+            </div>
+
+            <!-- 他のフロア移動ボタン一覧 -->
+            <div class="space-y-1.5 pt-1">
+              ${otherFloors.map(dest => `
+                <button type="button" onclick="executeQuickMove('${staff.id}', '${dest.key}')" class="w-full flex items-center justify-between p-3 rounded-xl border-2 hover:border-sky-400 ${dest.badge} transition active:scale-[0.98] shadow-2xs font-bold text-xs">
+                  <div class="flex items-center gap-2">
+                    <i class="${dest.icon} text-lg"></i>
+                    <span>${dest.name}</span>
+                  </div>
+                  <span class="text-[11px] px-2 py-0.5 bg-white/80 rounded border font-semibold flex items-center gap-1 text-slate-700">
+                    選択 <i class="ph ph-arrow-right"></i>
+                  </span>
+                </button>
+              `).join('')}
+            </div>
           </div>
-        </div>
-      `;
+        `;
+      }
 
-      // リーダー設定・並び順などのサブ操作
+      // 確定ボタンおよびその他の設定
       html += `
         <div class="pt-3 border-t border-slate-100 mt-3 space-y-2">
           <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">その他の設定</p>
+
+          <!-- 確定（固定）トグルボタン -->
+          <button type="button" onclick="toggleStaffLock('${staff.id}'); closeQuickMoveModal();" class="w-full flex items-center justify-center gap-1.5 p-2 rounded-lg border font-bold text-xs transition active:scale-[0.98] ${
+            staff.isLocked
+              ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+              : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300'
+          }">
+            <i class="${staff.isLocked ? 'ph-fill ph-lock-key text-emerald-600' : 'ph ph-lock-open text-slate-400'} text-base"></i>
+            <span>${staff.isLocked ? '🔒 確定（固定）を解除する' : '🔒 このフロア配置で確定（固定）する'}</span>
+          </button>
       `;
 
       if (staff.floor === '2F' || staff.floor === '3F') {
@@ -1615,10 +1711,10 @@
 
       html += `
           <div class="grid grid-cols-2 gap-1.5">
-            <button type="button" onclick="moveStaffToExtreme('${staff.id}', 'top'); closeQuickMoveModal();" class="flex items-center justify-center gap-1 p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold active:scale-95 transition">
+            <button type="button" ${staff.isLocked ? 'disabled' : ''} onclick="moveStaffToExtreme('${staff.id}', 'top'); closeQuickMoveModal();" class="flex items-center justify-center gap-1 p-1.5 rounded-lg ${staff.isLocked ? 'bg-slate-100 text-slate-300 cursor-not-allowed' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 active:scale-95'} text-[11px] font-semibold transition">
               <i class="ph-bold ph-arrow-fat-line-up text-sky-600"></i> 1番上へ
             </button>
-            <button type="button" onclick="moveStaffToExtreme('${staff.id}', 'bottom'); closeQuickMoveModal();" class="flex items-center justify-center gap-1 p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold active:scale-95 transition">
+            <button type="button" ${staff.isLocked ? 'disabled' : ''} onclick="moveStaffToExtreme('${staff.id}', 'bottom'); closeQuickMoveModal();" class="flex items-center justify-center gap-1 p-1.5 rounded-lg ${staff.isLocked ? 'bg-slate-100 text-slate-300 cursor-not-allowed' : 'bg-slate-100 hover:bg-slate-200 text-slate-700 active:scale-95'} text-[11px] font-semibold transition">
               <i class="ph-bold ph-arrow-fat-line-down text-sky-600"></i> 1番下へ
             </button>
           </div>
@@ -1633,6 +1729,11 @@
     }
 
     function executeQuickMove(staffId, targetFloor) {
+      const staff = staffList.find(s => s.id === staffId);
+      if (staff && staff.isLocked) {
+        showLockedStaffAlert(staff.name);
+        return;
+      }
       const reasonInput = document.getElementById('quick-move-reason');
       const reason = reasonInput ? reasonInput.value.trim() : '';
       closeQuickMoveModal();
@@ -1642,6 +1743,11 @@
     // カード右端のプルダウンから即座にフロアを移動
     function executeFloorSelectChange(staffId, targetFloor) {
       if (!staffId || !targetFloor) return;
+      const staff = staffList.find(s => s.id === staffId);
+      if (staff && staff.isLocked) {
+        showLockedStaffAlert(staff.name);
+        return;
+      }
       moveStaffToFloor(staffId, targetFloor, '');
     }
 
@@ -2022,17 +2128,29 @@
       const count2F = staffList.filter(s => s.floor === '2F').length;
       const count3F = staffList.filter(s => s.floor === '3F').length;
 
+      const locked2 = staffList.filter(s => s.floor === '2F' && s.isLocked).length;
+      const locked3 = staffList.filter(s => s.floor === '3F' && s.isLocked).length;
+
       const care2 = staffList.filter(s => s.floor === '2F' && s.qualification === '介護福祉士').length;
       const nurse2 = staffList.filter(s => s.floor === '2F' && s.qualification.includes('看護')).length;
 
       const care3 = staffList.filter(s => s.floor === '3F' && s.qualification === '介護福祉士').length;
       const nurse3 = staffList.filter(s => s.floor === '3F' && s.qualification.includes('看護')).length;
 
-      document.getElementById('stat-floor2-badge').innerText = `${count2F}名`;
-      document.getElementById('stat-floor2-sub').innerText = `介福 ${care2} / 看護 ${nurse2}`;
+      const lockedBadge2 = locked2 > 0 ? `<span class="text-[11px] font-semibold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded ml-1">🔒固定${locked2}</span>` : '';
+      const lockedBadge3 = locked3 > 0 ? `<span class="text-[11px] font-semibold text-indigo-700 bg-indigo-100/80 px-1.5 py-0.5 rounded ml-1">🔒固定${locked3}</span>` : '';
 
-      document.getElementById('stat-floor3-badge').innerText = `${count3F}名`;
-      document.getElementById('stat-floor3-sub').innerText = `介福 ${care3} / 看護 ${nurse3}`;
+      const badge2El = document.getElementById('stat-floor2-badge');
+      if (badge2El) badge2El.innerHTML = `<span class="align-middle">${count2F}名</span>${lockedBadge2}`;
+
+      const sub2El = document.getElementById('stat-floor2-sub');
+      if (sub2El) sub2El.innerText = `介福 ${care2} / 看護 ${nurse2}`;
+
+      const badge3El = document.getElementById('stat-floor3-badge');
+      if (badge3El) badge3El.innerHTML = `<span class="align-middle">${count3F}名</span>${lockedBadge3}`;
+
+      const sub3El = document.getElementById('stat-floor3-sub');
+      if (sub3El) sub3El.innerText = `介福 ${care3} / 看護 ${nurse3}`;
     }
 
     // ================= スタッフ編集モーダル =================
